@@ -8,7 +8,6 @@ from rich.table import Table
 from rich.text import Text
 from rich.prompt import Confirm
 from rich.panel import Panel
-from rich.layout import Layout
 from rich import box
 
 # Import our utility modules
@@ -96,25 +95,6 @@ def check_existing_data():
     console.print("[yellow]No existing data file found. Starting fresh.[/yellow]")
     CURRENT_DATA_FILE = DATA_FILENAME
     return []
-
-def welcome_message():
-    """Displays a welcome message using Rich Console."""
-    console.print("[bold green]------------------------------------[/bold green]")
-    console.print("[bold green]Welcome to your Net Worth Tracker![/bold green]")
-    console.print("[bold green]------------------------------------[/bold green]")
-    console.print("You can load previous data, start fresh, or view historical charts.")
-    console.print("Each session is saved with a date, allowing historical tracking.")
-    console.print("Default date for new/updated records is always [cyan]today[/cyan].")
-    console.print("Assets can be categorised for additional reporting.")
-    console.print()
-    console.print("[dim]Data is stored in JSON format with each record containing:[/dim]")
-    console.print("[dim]- A date (YYYY-MM-DD)[/dim]")
-    console.print("[dim]- A list of assets, each with:[/dim]")
-    console.print("[dim]  * Name[/dim]")
-    console.print("[dim]  * Liquid status (true/false)[/dim]")
-    console.print("[dim]  * Balance (currency value)[/dim]")
-    console.print("[dim]  * Category (aligns with standard or custom categories)[/dim]")
-    console.print()
 
 def display_assets(assets, show_balances=True, show_categories=True, table_title="Current Assets"):
     """Displays the current list of assets in a Rich Table with enhanced formatting."""

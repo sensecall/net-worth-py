@@ -1,9 +1,9 @@
 from simple_term_menu import TerminalMenu
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 def create_menu(
     options: List[str],
-    title: str = "",
+    title: Optional[str] = None,
     shortcuts: bool = True,
     return_shortcut: bool = True,
     return_label: str = "Return to previous menu"

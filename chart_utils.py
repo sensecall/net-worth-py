@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib.dates as mdates
 from matplotlib.ticker import FuncFormatter
+from datetime import datetime
 
 # Initialize console for output
 console = Console()
