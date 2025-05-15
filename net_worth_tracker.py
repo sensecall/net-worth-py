@@ -480,8 +480,7 @@ def main():
     
     while True: # Main menu loop
         console.print("\n[bold underline]Main Menu[/bold underline]")
-        console.print("  [bold green]U[/bold green]. Update your most recent record")
-        console.print("  [bold blue]N[/bold blue]. Create a new record from scratch")
+        console.print("  [bold green]U[/bold green]. Update your net worth record")
         console.print("  [bold cyan]V[/bold cyan]. View available asset categories")
         
         if CHARTING_AVAILABLE:
@@ -502,10 +501,9 @@ def main():
             console.print(f"\n[red]Error reading input: {e}. Please try again.[/red]")
             continue
 
-        if menu_choice == 'u':  # Changed from 'l' to 'u'
+        if menu_choice == 'u':
             if not all_historical_records:
-                console.print("\n[yellow]No historical data found. Starting a new fresh record instead.[/yellow]")
-                # Treat as 'N'
+                console.print("\n[yellow]No historical data found. Starting a new fresh record.[/yellow]")
                 all_historical_records = manage_record_session([], None, all_historical_records)
             else:
                 latest_record = all_historical_records[0] # Assumes sorted
@@ -515,9 +513,6 @@ def main():
                     latest_record.get('date'), 
                     all_historical_records
                 )
-        elif menu_choice == 'n':
-            console.print("\n[green]Starting a new fresh record...[/green]")
-            all_historical_records = manage_record_session([], None, all_historical_records)
         elif menu_choice == 'v':
             console.print("\n[green]Viewing categories...[/green]")
             view_categories(console)
