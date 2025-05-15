@@ -13,13 +13,14 @@ from matplotlib.ticker import FuncFormatter
 # Initialize console for output
 console = Console()
 
-def generate_charts(all_historical_records, chart_type="summary"):
+def generate_charts(all_historical_records, chart_type="summary", specific_asset=None):
     """
     Generate charts based on historical data.
     
     Args:
         all_historical_records: List of historical net worth records
-        chart_type: Type of chart to generate ("summary", "detailed", "category", or "all")
+        chart_type: Type of chart to generate ("summary", "detailed", "category", "asset", or "all")
+        specific_asset: Name of a specific asset to chart (only used when chart_type is "asset")
         
     Returns:
         List of generated chart filenames
@@ -52,6 +53,12 @@ def generate_charts(all_historical_records, chart_type="summary"):
     if chart_type == "category" or chart_type == "all":
         chart_filename = "net_worth_category_chart.png"
         _generate_category_chart(chart_data, chart_filename, all_historical_records)
+        generated_charts.append(chart_filename)
+        
+    if chart_type == "asset" and specific_asset:
+        # Generate a chart for a specific asset
+        chart_filename = f"{specific_asset.replace(' ', '_').lower()}_history_chart.png"
+        _generate_single_asset_chart(chart_data, chart_filename, specific_asset)
         generated_charts.append(chart_filename)
         
     return generated_charts
@@ -659,3 +666,78 @@ def _generate_category_chart(chart_data, chart_filename, all_historical_records)
         console.print(f"[bold red]An error occurred while saving the category chart: {e}[/bold red]")
     finally:
         plt.close(fig)  # Close the figure to free memory 
+
+def _generate_single_asset_chart(chart_data, chart_filename, asset_name):
+    """
+    Generates a chart showing the balance history of a single specific asset.
+    
+    Args:
+        chart_data: Dictionary with chart data
+        chart_filename: Filename to save the chart
+        asset_name: Name of the asset to chart
+    """
+    df = chart_data['df']
+    
+    # Check if the asset exists in the dataframe
+    if asset_name not in df.columns:
+        console.print(f"[yellow]Asset '{asset_name}' not found in historical data.[/yellow]")
+        return
+    
+    # Extract the asset's balance history
+    asset_series = df[asset_name]
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    # Determine if asset is generally positive or negative (debt)
+    is_mostly_positive = asset_series.mean() >= 0
+    line_color = 'green' if is_mostly_positive else 'red'
+    fill_color = 'mediumseagreen' if is_mostly_positive else 'lightcoral'
+    
+    # Plot the asset balance as a line
+    ax.plot(df.index, asset_series, label=asset_name, 
+            color=line_color, linewidth=2.5, marker='o')
+    
+    # Add fill below the line to emphasize the values
+    ax.fill_between(df.index, asset_series, 0, 
+                    color=fill_color, alpha=0.3)
+    
+    # Add annotations for values
+    for date, value in zip(df.index, asset_series):
+        value_text = f"£{value:,.0f}"
+        ax.annotate(value_text, (date, value),
+                   xytext=(0, 10 if value >= 0 else -20),
+                   textcoords='offset points',
+                   ha='center', va='center',
+                   bbox=dict(boxstyle='round,pad=0.5', fc='white', alpha=0.7),
+                   fontsize=9)
+    
+    # Configure axes
+    ax.set_title(f'Balance History for {asset_name}', fontsize=16, pad=20)
+    ax.set_xlabel('Date', fontsize=12, labelpad=10)
+    ax.set_ylabel('Balance (£)', fontsize=12, labelpad=10)
+    
+    # Format y-axis as currency
+    def gbp_formatter(x, pos):
+        return f'£{x:,.0f}'
+    
+    ax.yaxis.set_major_formatter(FuncFormatter(gbp_formatter))
+    
+    # Configure x-axis date formatting
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+    plt.xticks(rotation=45)
+    
+    # Add horizontal line at zero
+    ax.axhline(y=0, color='gray', linestyle='-', alpha=0.7)
+    
+    # Add grid
+    ax.grid(True, linestyle='--', alpha=0.7)
+    
+    # Adjust layout
+    plt.tight_layout()
+    
+    # Save the chart
+    plt.savefig(chart_filename, dpi=100, bbox_inches='tight')
+    plt.close()
+    
+    console.print(f"[green]Single asset chart created: [bold]{chart_filename}[/bold][/green]") 

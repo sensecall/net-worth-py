@@ -24,10 +24,30 @@ A Python-based terminal application for tracking personal net worth over time.
 ### Installation
 
 1. Clone this repository
-2. Install dependencies:
+2. (Optional) Set up a virtual environment:
    ```
-   pip install rich readchar
+   python -m venv venv
+   source venv/bin/activate
+   ```
+   or if you're on an ARM Mac:
+   ```
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+   or if you're on Windows:
+   ```
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+3. Install dependencies:
+   ```
+   pip install rich readchar simple-term-menu
    pip install matplotlib pandas  # Optional, for charts
+   ```
+
+   Alternatively, you can install all dependencies using the requirements file:
+   ```
+   pip install -r requirements.txt
    ```
 
 ### Usage
