@@ -1,0 +1,44 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.env/
+.venv/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache/
+coverage.xml
+*.cover
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files
+*.json
+!example_data.json
+
+# Generated charts
+*.png
+!example_charts/*.png
+
+# VSCode
+.vscode/
+
+# PyCharm
+.idea/
+
+# macOS specific
+.DS_Store 

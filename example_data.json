@@ -1,0 +1,96 @@
+[
+  {
+    "date": "2023-06-01",
+    "assets": [
+      {
+        "name": "Current Account",
+        "liquid": true,
+        "balance": 2500.00,
+        "category": "Current Account"
+      },
+      {
+        "name": "Savings Account",
+        "liquid": true,
+        "balance": 10000.00,
+        "category": "Savings"
+      },
+      {
+        "name": "Stocks ISA",
+        "liquid": false,
+        "balance": 15000.00,
+        "category": "ISA"
+      },
+      {
+        "name": "Workplace Pension",
+        "liquid": false,
+        "balance": 45000.00,
+        "category": "Pension"
+      },
+      {
+        "name": "Property",
+        "liquid": false,
+        "balance": 250000.00,
+        "category": "Property"
+      },
+      {
+        "name": "Mortgage",
+        "liquid": false,
+        "balance": -180000.00,
+        "category": "Mortgage"
+      },
+      {
+        "name": "Credit Card",
+        "liquid": true,
+        "balance": -1500.00,
+        "category": "Credit Card"
+      }
+    ]
+  },
+  {
+    "date": "2023-07-01",
+    "assets": [
+      {
+        "name": "Current Account",
+        "liquid": true,
+        "balance": 2800.00,
+        "category": "Current Account"
+      },
+      {
+        "name": "Savings Account",
+        "liquid": true,
+        "balance": 10500.00,
+        "category": "Savings"
+      },
+      {
+        "name": "Stocks ISA",
+        "liquid": false,
+        "balance": 15600.00,
+        "category": "ISA"
+      },
+      {
+        "name": "Workplace Pension",
+        "liquid": false,
+        "balance": 46000.00,
+        "category": "Pension"
+      },
+      {
+        "name": "Property",
+        "liquid": false,
+        "balance": 250000.00,
+        "category": "Property"
+      },
+      {
+        "name": "Mortgage",
+        "liquid": false,
+        "balance": -179500.00,
+        "category": "Mortgage"
+      },
+      {
+        "name": "Credit Card",
+        "liquid": true,
+        "balance": -1200.00,
+        "category": "Credit Card"
+      }
+    ]
+  }
+] 
