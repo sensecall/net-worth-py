@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 from rich.prompt import Confirm
+from simple_term_menu import TerminalMenu
 
 # Import our utility modules
 from asset_utils import (
@@ -38,52 +39,57 @@ def check_existing_data():
     
     if os.path.exists(DATA_FILENAME):
         console.print(f"[yellow]We spotted a JSON file ([cyan]{DATA_FILENAME}[/cyan]) which looks like it contains your net worth history.[/yellow]")
-        console.print("\nWhat would you like to do?")
-        console.print("  [bold green]L[/bold green]. Load this existing file")
-        console.print("  [bold blue]F[/bold blue]. Start fresh (creates a new file, won't overwrite existing data)")
-        console.print("  [bold magenta]O[/bold magenta]. Open a different data file")
-        console.print("Your choice: ", end="")
         
-        try:
-            choice = readchar.readkey().lower()
-            console.print(choice)
+        options = [
+            f"Load this existing file ({DATA_FILENAME})",
+            "Start fresh (creates a new file, won't overwrite existing data)",
+            "Open a different data file",
+            "Exit application"
+        ]
+        
+        terminal_menu = TerminalMenu(
+            options,
+            title="\nWhat would you like to do?",
+            menu_cursor="► ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_blue", "bold"),
+        )
+        
+        menu_entry_index = terminal_menu.show()
+        
+        # Handle ESC/q to exit
+        if menu_entry_index is None or menu_entry_index == 3:  # Exit option
+            console.print("\n[yellow]Exiting application. Goodbye![/yellow]")
+            sys.exit()
             
-            if choice == 'l':
-                console.print(f"\n[green]Loading data from [cyan]{DATA_FILENAME}[/cyan]...[/green]")
-                CURRENT_DATA_FILE = DATA_FILENAME
-                return load_historical_data()
-            elif choice == 'f':
-                # Generate a new filename to avoid overwriting the existing file
-                filename_without_ext = os.path.splitext(DATA_FILENAME)[0]
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                new_filename = f"{filename_without_ext}_new_{timestamp}.json"
-                
-                console.print(f"\n[yellow]Starting fresh with no historical data.[/yellow]")
-                console.print(f"[green]Your new data will be saved to [cyan]{new_filename}[/cyan] to preserve your existing data.[/green]")
-                
-                CURRENT_DATA_FILE = new_filename
-                return []
-            elif choice == 'o':
-                different_file = console.input("\nEnter the path to your data file: ").strip()
-                if different_file and os.path.exists(different_file):
-                    console.print(f"[green]Loading data from [cyan]{different_file}[/cyan]...[/green]")
-                    CURRENT_DATA_FILE = different_file
-                    return load_historical_data(different_file)
-                else:
-                    console.print(f"[red]File not found: [cyan]{different_file}[/cyan]. Starting fresh.[/red]")
-                    # Generate a new filename since the specified file doesn't exist
-                    filename_without_ext = os.path.splitext(different_file)[0] if '.' in different_file else different_file
-                    CURRENT_DATA_FILE = f"{filename_without_ext}.json"
-                    console.print(f"[green]Your data will be saved to [cyan]{CURRENT_DATA_FILE}[/cyan].[/green]")
-                    return []
-            else:
-                console.print(" [red]Invalid choice. Loading default file.[/red]")
-                CURRENT_DATA_FILE = DATA_FILENAME
-                return load_historical_data()
-        except Exception as e:
-            console.print(f"\n[red]Error reading input: {e}. Loading default file.[/red]")
+        if menu_entry_index == 0:  # Load existing file
+            console.print(f"\n[green]Loading data from [cyan]{DATA_FILENAME}[/cyan]...[/green]")
             CURRENT_DATA_FILE = DATA_FILENAME
             return load_historical_data()
+        elif menu_entry_index == 1:  # Start fresh
+            # Generate a new filename to avoid overwriting the existing file
+            filename_without_ext = os.path.splitext(DATA_FILENAME)[0]
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_filename = f"{filename_without_ext}_new_{timestamp}.json"
+            
+            console.print(f"\n[yellow]Starting fresh with no historical data.[/yellow]")
+            console.print(f"[green]Your new data will be saved to [cyan]{new_filename}[/cyan] to preserve your existing data.[/green]")
+            
+            CURRENT_DATA_FILE = new_filename
+            return []
+        elif menu_entry_index == 2:  # Open different file
+            different_file = console.input("\nEnter the path to your data file: ").strip()
+            if different_file and os.path.exists(different_file):
+                console.print(f"[green]Loading data from [cyan]{different_file}[/cyan]...[/green]")
+                CURRENT_DATA_FILE = different_file
+                return load_historical_data(different_file)
+            else:
+                console.print(f"[red]File not found: [cyan]{different_file}[/cyan]. Starting fresh.[/red]")
+                # Generate a new filename since the specified file doesn't exist
+                filename_without_ext = os.path.splitext(different_file)[0] if '.' in different_file else different_file
+                CURRENT_DATA_FILE = f"{filename_without_ext}.json"
+                console.print(f"[green]Your data will be saved to [cyan]{CURRENT_DATA_FILE}[/cyan].[/green]")
+                return []
     else:
         console.print("[yellow]No existing data file found. Starting fresh.[/yellow]")
         CURRENT_DATA_FILE = DATA_FILENAME
@@ -207,41 +213,78 @@ def load_historical_data(filename=DATA_FILENAME):
 def get_asset_balances(assets):
     """Iterates through assets and prompts the user for their balances, allowing skips."""
     if not assets:
-        return
+        return True  # Nothing to update
 
     console.print("\n[bold blue]------------------------------------[/bold blue]")
     console.print("[bold blue]Now, let's enter the balances for your assets.[/bold blue]")
-    console.print("([italic]Press Enter to keep current balance, 's' to skip an asset, or 'q' to quit.[/italic])")
     console.print("[bold blue]------------------------------------[/bold blue]")
 
-    for asset in assets:
+    # Loop through assets
+    current_asset_index = 0
+    while current_asset_index < len(assets):
+        asset = assets[current_asset_index]
         current_balance = asset.get('balance', 0.0)
-        display_assets([asset]) # Show only the current asset being queried
         
-        while True:
-            prompt_text = f"Enter balance for [cyan]'{asset['name']}'[/cyan] ([green]{current_balance:,.2f}[/green]), 's' to skip, or 'q' to quit: "
-            user_input = console.input(prompt_text).strip().lower()
-
-            if user_input == 'q':
-                console.print("[yellow]Quitting balance update. Returning to previous menu.[/yellow]")
-                return False
-            elif user_input == 's':
-                console.print(f"[yellow]Skipped '{asset['name']}'. Balance remains {current_balance:,.2f}.[/yellow]\n")
-                break # Move to the next asset
-            elif not user_input: # User pressed Enter (accept current balance)
-                # No change needed, balance is already current_balance
-                console.print(f"Balance for '{asset['name']}' kept as [green]{current_balance:,.2f}[/green].\n")
-                break # Move to the next asset
-            else:
+        console.print(f"\n[bold cyan]Asset {current_asset_index + 1} of {len(assets)}:[/bold cyan]")
+        display_assets([asset])  # Show only the current asset being queried
+        
+        # Prepare options
+        options = [
+            f"Keep current balance: {current_balance:,.2f}",
+            "Enter a new balance",
+            "Skip this asset",
+        ]
+        
+        # Add navigation options when appropriate
+        if current_asset_index > 0:
+            options.append("Go back to previous asset")
+        
+        options.append("Exit balance entry (return to menu)")
+        
+        terminal_menu = TerminalMenu(
+            options,
+            title=f"\nWhat would you like to do with '{asset['name']}'?",
+            menu_cursor="► ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_blue", "bold"),
+        )
+        
+        menu_entry_index = terminal_menu.show()
+        
+        # Handle ESC/q
+        if menu_entry_index is None:
+            console.print("[yellow]Quitting balance update. Returning to previous menu.[/yellow]")
+            return False
+            
+        selected_option = options[menu_entry_index]
+        
+        if "Keep current balance" in selected_option:
+            console.print(f"Balance for '{asset['name']}' kept as [green]{current_balance:,.2f}[/green].")
+            current_asset_index += 1
+        elif selected_option == "Enter a new balance":
+            while True:
+                user_input = console.input(f"Enter new balance for [cyan]'{asset['name']}'[/cyan]: ").strip()
+                if not user_input:
+                    console.print(f"[yellow]No input. Keeping current balance: {current_balance:,.2f}.[/yellow]")
+                    break
                 try:
                     new_balance = float(user_input)
                     asset['balance'] = new_balance
-                    console.print(f"Balance for '{asset['name']}' set to [green]{new_balance:,.2f}[/green].\n")
-                    break # Move to the next asset
+                    console.print(f"Balance for '{asset['name']}' set to [green]{new_balance:,.2f}[/green].")
+                    break
                 except ValueError:
-                    console.print("[red]Invalid input. Please enter a number, 's' to skip, or 'q' to quit.[/red]")
+                    console.print("[red]Invalid input. Please enter a number.[/red]")
+            current_asset_index += 1
+        elif selected_option == "Skip this asset":
+            console.print(f"[yellow]Skipped '{asset['name']}'. Balance remains {current_balance:,.2f}.[/yellow]")
+            current_asset_index += 1
+        elif selected_option == "Go back to previous asset":
+            current_asset_index -= 1
+        elif "Exit balance entry" in selected_option:
+            console.print("[yellow]Exiting balance entry. Returning to previous menu.[/yellow]")
+            return False
     
-    console.print("[green]Finished updating balances.[/green]")
+    console.print("\n[green]Finished updating all asset balances.[/green]")
     return True
 
 def save_historical_data(all_records, current_entry_date, current_assets, filename=None):
@@ -296,37 +339,53 @@ def manage_record_session(initial_assets, initial_date_str, all_historical_recor
     # If we have initial assets (i.e., loaded a record), ask if user wants to edit them or just update balances
     if current_assets:
         console.print(f"Data for the record ([cyan]{loaded_record_date_for_editing or 'New Record'}[/cyan]) with {len(current_assets)} asset(s) is ready for review/update.")
+        
+        options = [
+            "Add, remove or manage assets",
+            "Update the values/balances of your existing assets",
+            "Change asset categories",
+            "Cancel and return to main menu"
+        ]
+        
+        terminal_menu = TerminalMenu(
+            options,
+            title="\nWhat would you like to do with this record?",
+            menu_cursor="► ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_blue", "bold"),
+        )
+        
         while True:
-            console.print("\nWhat would you like to do with this record?")
-            console.print("  [bold yellow]E[/bold yellow]. Add/remove/rename assets or change their liquid status")
-            console.print("  [bold cyan]U[/bold cyan]. Update the values/balances of your existing assets")
-            console.print("  [bold magenta]C[/bold magenta]. Set categories for your assets (e.g., Pension, ISA, Property)")
-            # No 'S'tart fresh here, that's handled by main menu choice 'N'
-            console.print("Your choice (e, u, or c): ", end="")
-            try:
-                action_choice = readchar.readkey().lower()
-                console.print(action_choice)
-                if action_choice == 'e':
-                    proceed_to_asset_editing = True
-                    break
-                elif action_choice == 'u':
-                    proceed_to_asset_editing = False
-                    break
-                elif action_choice == 'c':
-                    category_result = categorize_assets(current_assets, console)
-                    if category_result is False:
-                        # User wants to go back without saving category changes
-                        console.print("[yellow]Returning to main menu without saving category changes.[/yellow]")
-                        return all_historical_records
-                    continue  # Show the menu again after categorizing
-                else:
-                    console.print(" [red]Invalid choice. Please press E, U, or C.[/red]")
-            except Exception as e_sub:
-                console.print(f"\n[red]Error reading input: {e_sub}. Please try again.[/red]")
+            menu_entry_index = terminal_menu.show()
+            
+            # Handle ESC/q to exit
+            if menu_entry_index is None:
+                console.print("\n[yellow]Returning to main menu without saving changes.[/yellow]")
+                return all_historical_records
+                
+            selected_option = options[menu_entry_index]
+            
+            if selected_option == "Add, remove or manage assets":
+                proceed_to_asset_editing = True
+                action_choice = 'e'
+                break
+            elif selected_option == "Update the values/balances of your existing assets":
+                proceed_to_asset_editing = False
+                action_choice = 'u'
+                break
+            elif selected_option == "Change asset categories":
+                category_result = categorize_assets(current_assets, console)
+                if category_result is False:
+                    # User wants to go back without saving category changes
+                    console.print("[yellow]Returning to main menu without saving category changes.[/yellow]")
+                    return all_historical_records
+                continue  # Show the menu again after categorizing
+            elif selected_option == "Cancel and return to main menu":
+                console.print("\n[yellow]Returning to main menu without saving changes.[/yellow]")
+                return all_historical_records
         
         if action_choice == 'u':
              console.print(f"\n[green]Proceeding to update balances for assets from [cyan]{loaded_record_date_for_editing or 'current session'}[/cyan].[/green]")
-
 
     # ---- Main Workflow for the session ----
     todays_date_str = datetime.now().strftime("%Y-%m-%d")
@@ -341,61 +400,41 @@ def manage_record_session(initial_assets, initial_date_str, all_historical_recor
         
         while True:
             display_assets(current_assets, show_balances=False, show_categories=True)
-            console.print("\n[b]Options:[/b]")
-            console.print("• Type an asset name to add a new asset")
-            console.print("• Type [cyan]'remove 1'[/cyan] to delete asset number 1")
-            console.print("• Type [cyan]'undo'[/cyan] to remove the last added asset")
-            console.print("• Type [cyan]'category 2'[/cyan] to set the category for asset number 2")
-            console.print("• Type [cyan]'done'[/cyan] when you've finished editing assets")
-            console.print("• Type [cyan]'back'[/cyan] or [cyan]'cancel'[/cyan] to return to the previous menu")
-            user_input = console.input("[b magenta]Enter command or asset name:[/b magenta] ").strip()
-            command = user_input.lower()
-            console.print() 
-
-            if command == "done":
-                if not current_assets:
-                    console.print("[yellow]No assets defined.[/yellow]")
-                else:
-                    console.print("[green]Finished defining/editing assets.[/green]")
-                break
-            elif command in ["back", "cancel"]:
-                console.print("[yellow]Returning to previous menu without saving changes.[/yellow]")
-                return all_historical_records  # Return without making changes
-            elif command == "undo":
-                if current_assets:
-                    removed_asset = current_assets.pop()
-                    console.print(f"[yellow]Undid adding '{removed_asset['name']}'.[/yellow]\n")
-                else:
-                    console.print("[red]No assets to undo.[/red]\n")
-            elif command.startswith("remove "):
-                parts = user_input.split(maxsplit=1)
-                if len(parts) == 2 and parts[0].lower() == "remove":
-                    try:
-                        index_to_remove = int(parts[1])
-                        if 1 <= index_to_remove <= len(current_assets):
-                            removed_asset = current_assets.pop(index_to_remove - 1)
-                            console.print(f"[yellow]Removed '{removed_asset['name']}'.[/yellow]\n")
-                        else:
-                            console.print(f"[red]Invalid index.[/red]\n")
-                    except ValueError:
-                        console.print(f"[red]Invalid index number.[/red]\n")
-                else:
-                    console.print("[red]Invalid remove command.[/red]\n")
-            elif command.startswith("category "):
-                parts = user_input.split(maxsplit=1)
-                if len(parts) == 2 and parts[0].lower() == "category":
-                    try:
-                        index_to_categorize = int(parts[1])
-                        if 1 <= index_to_categorize <= len(current_assets):
-                            set_asset_category(current_assets[index_to_categorize - 1], console)
-                        else:
-                            console.print(f"[red]Invalid index.[/red]\n")
-                    except ValueError:
-                        console.print(f"[red]Invalid index number.[/red]\n")
-                else:
-                    console.print("[red]Invalid category command.[/red]\n")
-            elif user_input:
-                asset_name = user_input
+            
+            # Prepare menu options
+            options = [
+                "Add a new asset",
+                "Remove an asset",
+                "Undo last addition",
+                "Change category for an asset",
+                "Done with asset editing",
+                "Cancel and return to main menu"
+            ]
+            
+            terminal_menu = TerminalMenu(
+                options,
+                title="\nChoose an action:",
+                menu_cursor="► ",
+                menu_cursor_style=("fg_green", "bold"),
+                menu_highlight_style=("bg_blue", "bold"),
+            )
+            
+            menu_entry_index = terminal_menu.show()
+            
+            # Handle ESC/q
+            if menu_entry_index is None:
+                console.print("[yellow]Returning to main menu without saving changes.[/yellow]")
+                return all_historical_records
+                
+            selected_option = options[menu_entry_index]
+            
+            if selected_option == "Add a new asset":
+                asset_name = console.input("[b magenta]Enter asset name: [/b magenta]").strip()
+                if not asset_name:
+                    console.print("[yellow]No asset name provided. Try again.[/yellow]")
+                    continue
+                    
+                # Ask about liquidity
                 while True:
                     console.print(f"Is [cyan]'{asset_name}'[/cyan] a liquid asset? (y/n): ", end="", highlight=False)
                     try:
@@ -417,9 +456,75 @@ def manage_record_session(initial_assets, initial_date_str, all_historical_recor
                 
                 current_assets.append({"name": asset_name, "liquid": is_liquid, "balance": 0.0, "category": category})
                 console.print(f"[green]Asset '{asset_name}' defined with category '{category}'.[/green]\n")
-            else: 
-                console.print("[yellow]No input.[/yellow]\n")
-            if command not in ["done"]: console.print("[dim]----------------[/dim]")
+                
+            elif selected_option == "Remove an asset":
+                if not current_assets:
+                    console.print("[red]No assets to remove.[/red]")
+                    continue
+                    
+                # Create a submenu of assets to remove
+                asset_options = [asset["name"] for asset in current_assets]
+                asset_options.append("Cancel removal")
+                
+                asset_menu = TerminalMenu(
+                    asset_options,
+                    title="\nSelect an asset to remove:",
+                    menu_cursor="► ",
+                    menu_cursor_style=("fg_red", "bold"),
+                    menu_highlight_style=("bg_red", "bold"),
+                )
+                
+                asset_index = asset_menu.show()
+                
+                if asset_index is None or asset_index == len(asset_options) - 1:
+                    console.print("[yellow]Asset removal cancelled.[/yellow]")
+                    continue
+                    
+                removed_asset = current_assets.pop(asset_index)
+                console.print(f"[yellow]Removed '{removed_asset['name']}'.[/yellow]\n")
+                
+            elif selected_option == "Undo last addition":
+                if current_assets:
+                    removed_asset = current_assets.pop()
+                    console.print(f"[yellow]Undid adding '{removed_asset['name']}'.[/yellow]\n")
+                else:
+                    console.print("[red]No assets to undo.[/red]\n")
+                    
+            elif selected_option == "Change category for an asset":
+                if not current_assets:
+                    console.print("[red]No assets to categorize.[/red]")
+                    continue
+                    
+                # Create a submenu of assets to categorize
+                asset_options = [asset["name"] for asset in current_assets]
+                asset_options.append("Cancel category change")
+                
+                asset_menu = TerminalMenu(
+                    asset_options,
+                    title="\nSelect an asset to change category:",
+                    menu_cursor="► ",
+                    menu_cursor_style=("fg_green", "bold"),
+                    menu_highlight_style=("bg_blue", "bold"),
+                )
+                
+                asset_index = asset_menu.show()
+                
+                if asset_index is None or asset_index == len(asset_options) - 1:
+                    console.print("[yellow]Category change cancelled.[/yellow]")
+                    continue
+                    
+                set_asset_category(current_assets[asset_index], console)
+                
+            elif selected_option == "Done with asset editing":
+                if not current_assets:
+                    console.print("[yellow]No assets defined.[/yellow]")
+                else:
+                    console.print("[green]Finished defining/editing assets.[/green]")
+                break
+                
+            elif selected_option == "Cancel and return to main menu":
+                console.print("[yellow]Returning to main menu without saving changes.[/yellow]")
+                return all_historical_records
 
     if current_assets:
         balance_result = get_asset_balances(current_assets)
@@ -440,28 +545,62 @@ def manage_record_session(initial_assets, initial_date_str, all_historical_recor
         elif loaded_record_date_for_editing and proceed_to_asset_editing is True:
              console.print(f"([italic]The record template was from [cyan]{loaded_record_date_for_editing}[/cyan]. Defaulting save to today.[/italic])")
 
-        console.print("Enter a date in YYYY-MM-DD format, or press Enter for today's date.")
-        console.print("You can also type 'cancel' to return to the main menu without saving.")
-        date_prompt = f"Date for this record ([cyan]{todays_date_str}[/cyan]): "
-        user_date_input = console.input(date_prompt).strip()
+        # Prepare date options
+        options = [
+            f"Use today's date: {todays_date_str}",
+            "Enter a custom date",
+            "Return to main menu without saving"
+        ]
         
-        if user_date_input.lower() == 'cancel':
+        # Add option to keep original date if we're editing an existing record
+        if loaded_record_date_for_editing:
+            options.insert(1, f"Keep original date: {loaded_record_date_for_editing}")
+        
+        terminal_menu = TerminalMenu(
+            options,
+            title="\nChoose a date option:",
+            menu_cursor="► ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_blue", "bold"),
+        )
+        
+        menu_entry_index = terminal_menu.show()
+        
+        # Handle ESC/q
+        if menu_entry_index is None:
             console.print("[yellow]Cancelled. Returning to main menu without saving.[/yellow]")
             return all_historical_records
-        elif user_date_input:
-            try:
-                datetime.strptime(user_date_input, "%Y-%m-%d")
-                final_entry_date = user_date_input
-                console.print(f"[green]Date for record set to [cyan]{final_entry_date}[/cyan].[/green]")
-            except ValueError:
-                console.print(f"[red]Invalid date format for '{user_date_input}'. Using default: [cyan]{todays_date_str}[/cyan].[/red]")
-        else:
-            console.print(f"[green]Using default date: [cyan]{final_entry_date}[/cyan].[/green]")
+            
+        selected_option = options[menu_entry_index]
+        
+        if "Use today's date" in selected_option:
+            final_entry_date = todays_date_str
+            console.print(f"[green]Using today's date: [cyan]{final_entry_date}[/cyan].[/green]")
+        elif "Keep original date" in selected_option:
+            final_entry_date = loaded_record_date_for_editing
+            console.print(f"[green]Keeping original date: [cyan]{final_entry_date}[/cyan].[/green]")
+        elif "Enter a custom date" in selected_option:
+            console.print("Enter a date in YYYY-MM-DD format:")
+            user_date_input = console.input("Date: ").strip()
+            
+            if not user_date_input:
+                console.print(f"[yellow]No date entered. Using today's date: [cyan]{todays_date_str}[/cyan].[/yellow]")
+                final_entry_date = todays_date_str
+            else:
+                try:
+                    datetime.strptime(user_date_input, "%Y-%m-%d")
+                    final_entry_date = user_date_input
+                    console.print(f"[green]Date for record set to [cyan]{final_entry_date}[/cyan].[/green]")
+                except ValueError:
+                    console.print(f"[red]Invalid date format for '{user_date_input}'. Using today's date: [cyan]{todays_date_str}[/cyan].[/red]")
+                    final_entry_date = todays_date_str
+        else:  # Return without saving
+            console.print("[yellow]Cancelled. Returning to main menu without saving.[/yellow]")
+            return all_historical_records
     else:
         console.print("\n[yellow]No assets defined and no prior data. Nothing to set a date for or save.[/yellow]")
         # If truly nothing, no summary or save needed.
         return all_historical_records
-
 
     print_final_summary(final_entry_date, current_assets)
 
@@ -479,29 +618,36 @@ def main():
     all_historical_records = check_existing_data()
     
     while True: # Main menu loop
-        console.print("\n[bold underline]Main Menu[/bold underline]")
-        console.print("  [bold green]U[/bold green]. Update your net worth record")
-        console.print("  [bold cyan]V[/bold cyan]. View available asset categories")
+        options = [
+            "Update your net worth record",
+            "View available asset categories"
+        ]
         
         if CHARTING_AVAILABLE:
-            console.print("  [bold yellow]C[/bold yellow]. Generate chart: Overview of assets vs debts")
-            console.print("  [bold magenta]D[/bold magenta]. Generate chart: Detailed view of all your assets")
-            console.print("  [bold cyan]G[/bold cyan]. Generate chart: Assets grouped by category")
-            console.print("  [bold white]A[/bold white]. Generate all three chart types at once")
+            options.append("Generate charts")
         else:
-            console.print("  [dim]Charts not available - matplotlib/pandas missing[/dim]")
-            
-        console.print("  [bold red]Q[/bold red]. Quit the application")
-        console.print("Your choice: ", end="")
+            options.append("Charts not available - matplotlib/pandas missing")
         
-        try:
-            menu_choice = readchar.readkey().lower()
-            console.print(menu_choice)
-        except Exception as e:
-            console.print(f"\n[red]Error reading input: {e}. Please try again.[/red]")
-            continue
-
-        if menu_choice == 'u':
+        options.append("Quit the application")
+        
+        terminal_menu = TerminalMenu(
+            options,
+            title="\nNet Worth Tracker - Main Menu",
+            menu_cursor="► ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_blue", "bold"),
+        )
+        
+        menu_entry_index = terminal_menu.show()
+        
+        # Check if user cancelled (Esc/q)
+        if menu_entry_index is None:
+            console.print("\n[yellow]Exiting application. Goodbye![/yellow]")
+            sys.exit()
+            
+        selected_option = options[menu_entry_index]
+        
+        if selected_option == "Update your net worth record":
             if not all_historical_records:
                 console.print("\n[yellow]No historical data found. Starting a new fresh record.[/yellow]")
                 all_historical_records = manage_record_session([], None, all_historical_records)
@@ -513,34 +659,51 @@ def main():
                     latest_record.get('date'), 
                     all_historical_records
                 )
-        elif menu_choice == 'v':
+        elif selected_option == "View available asset categories":
             console.print("\n[green]Viewing categories...[/green]")
             view_categories(console)
+        elif selected_option == "Generate charts" and CHARTING_AVAILABLE:
+            # Chart submenu
+            chart_options = [
+                "Summary chart: Overview of assets vs debts",
+                "Detailed chart: View of all individual assets",
+                "Category chart: Assets grouped by category",
+                "Generate all three chart types at once",
+                "Return to main menu"
+            ]
             
-            # Additional options for when viewing categories
-            console.print("\n[bold]Options:[/bold]")
-            console.print("  [cyan]Press any key to return to main menu[/cyan]")
-            try:
-                readchar.readkey()
-            except Exception:
-                pass
-        elif CHARTING_AVAILABLE and menu_choice == 'c':
-            console.print("\n[green]Generating summary net worth chart...[/green]")
-            chart_utils.generate_charts(all_historical_records, "summary")
-        elif CHARTING_AVAILABLE and menu_choice == 'd':
-            console.print("\n[green]Generating detailed net worth chart (all assets)...[/green]")
-            chart_utils.generate_charts(all_historical_records, "detailed")
-        elif CHARTING_AVAILABLE and menu_choice == 'g':
-            console.print("\n[green]Generating category-based net worth chart...[/green]")
-            chart_utils.generate_charts(all_historical_records, "category")
-        elif CHARTING_AVAILABLE and menu_choice == 'a':
-            console.print("\n[green]Generating all chart types...[/green]")
-            chart_utils.generate_charts(all_historical_records, "all")
-        elif menu_choice == 'q':
+            chart_menu = TerminalMenu(
+                chart_options,
+                title="\nChart Options",
+                menu_cursor="► ",
+                menu_cursor_style=("fg_green", "bold"),
+                menu_highlight_style=("bg_blue", "bold"),
+            )
+            
+            chart_index = chart_menu.show()
+            
+            # Handle ESC/q to exit
+            if chart_index is None or chart_index == len(chart_options) - 1:
+                console.print("[yellow]Returning to main menu...[/yellow]")
+                continue
+                
+            selected_chart = chart_options[chart_index]
+            
+            if "Summary chart" in selected_chart:
+                console.print("\n[green]Generating summary net worth chart...[/green]")
+                chart_utils.generate_charts(all_historical_records, "summary")
+            elif "Detailed chart" in selected_chart:
+                console.print("\n[green]Generating detailed net worth chart (all assets)...[/green]")
+                chart_utils.generate_charts(all_historical_records, "detailed")
+            elif "Category chart" in selected_chart:
+                console.print("\n[green]Generating category-based net worth chart...[/green]")
+                chart_utils.generate_charts(all_historical_records, "category")
+            elif "Generate all three" in selected_chart:
+                console.print("\n[green]Generating all chart types...[/green]")
+                chart_utils.generate_charts(all_historical_records, "all")
+        elif selected_option == "Quit the application":
             console.print("\n[yellow]Exiting application. Goodbye![/yellow]")
             sys.exit()
-        else:
-            console.print(" [red]Invalid choice. Please select from the menu.[/red]")
         
         console.print("\n[dim]Returning to main menu...[/dim]")
 

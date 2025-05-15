@@ -205,6 +205,8 @@ def view_categories(console):
     Args:
         console: Rich console object for output
     """
+    from simple_term_menu import TerminalMenu
+    
     console.print("\n[bold blue]------------------------------------[/bold blue]")
     console.print("[bold blue]Available Categories[/bold blue]")
     console.print("[bold blue]------------------------------------[/bold blue]")
@@ -219,6 +221,19 @@ def view_categories(console):
             console.print(f"  {idx}. {category}")
     else:
         console.print("\n[dim]No custom categories defined.[/dim]")
+    
+    # Add a menu with a back option
+    options = ["Return to previous menu"]
+    
+    back_menu = TerminalMenu(
+        options,
+        title="\nPress Enter to return",
+        menu_cursor="► ",
+        menu_cursor_style=("fg_green", "bold"),
+        menu_highlight_style=("bg_blue", "bold"),
+    )
+    
+    back_menu.show()
 
 def categorize_assets(assets, console):
     """
@@ -227,50 +242,77 @@ def categorize_assets(assets, console):
     Args:
         assets (list): List of asset dictionaries to categorize
         console: Rich console object for output
+        
+    Returns:
+        bool: True if changes were saved, False if cancelled
     """
+    from simple_term_menu import TerminalMenu
+    
     if not assets:
         console.print("[yellow]No assets to categorize.[/yellow]")
-        return
+        return True
     
     console.print("\n[bold blue]------------------------------------[/bold blue]")
     console.print("[bold blue]Asset Categorization[/bold blue]")
     console.print("[bold blue]------------------------------------[/bold blue]")
     
     from net_worth_tracker import display_assets
-    display_assets(assets, show_balances=False, show_categories=True)
     
     while True:
-        console.print("\n[bold]Options:[/bold]")
-        console.print("  Enter an asset number to change its category")
-        console.print("  [cyan]A[/cyan]. Auto-categorize all assets")
-        console.print("  [cyan]V[/cyan]. View all available categories")
-        console.print("  [cyan]D[/cyan]. Done with categorization")
-        console.print("  [cyan]B[/cyan]. Back to previous menu without saving changes")
+        display_assets(assets, show_balances=False, show_categories=True)
         
-        user_input = console.input("Your choice: ").strip().lower()
+        # Build menu options
+        options = []
         
-        if user_input == 'd':
-            break
-        elif user_input == 'b':
+        # Add asset options
+        for idx, asset in enumerate(assets, 1):
+            category = asset.get('category', 'Other')
+            options.append(f"Set category for: {asset['name']} (currently: {category})")
+        
+        # Add utility options
+        options.append("Auto-categorize all assets")
+        options.append("View all available categories")
+        options.append("Done with categorization")
+        options.append("Back to previous menu without saving changes")
+        
+        terminal_menu = TerminalMenu(
+            options,
+            title="\nSelect an option:",
+            menu_cursor="► ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_blue", "bold"),
+        )
+        
+        menu_entry_index = terminal_menu.show()
+        
+        # Handle ESC/q
+        if menu_entry_index is None:
             console.print("[yellow]Returning to previous menu without applying category changes.[/yellow]")
-            return False  # Indicate changes were not saved
-        elif user_input == 'a':
+            return False
+            
+        # Check which option was selected
+        num_assets = len(assets)
+        if menu_entry_index < num_assets:  # Selected an asset
+            asset_idx = menu_entry_index
+            set_asset_category(assets[asset_idx], console)
+        elif options[menu_entry_index] == "Auto-categorize all assets":
             for asset in assets:
                 if 'category' not in asset or asset.get('category') == 'Other':
                     asset['category'] = guess_category(asset['name'])
             console.print("[green]All assets have been auto-categorized.[/green]")
-            display_assets(assets, show_balances=False, show_categories=True)
-        elif user_input == 'v':
+        elif options[menu_entry_index] == "View all available categories":
             view_categories(console)
-        else:
+            # Wait for a key press to continue
+            console.print("\n[cyan]Press any key to continue[/cyan]")
             try:
-                idx = int(user_input)
-                if 1 <= idx <= len(assets):
-                    set_asset_category(assets[idx-1], console)
-                    display_assets(assets, show_balances=False, show_categories=True)
-                else:
-                    console.print("[red]Invalid asset number.[/red]")
-            except ValueError:
-                console.print("[red]Invalid input.[/red]") 
+                import readchar
+                readchar.readkey()
+            except Exception:
+                console.input("Press Enter to continue")
+        elif options[menu_entry_index] == "Done with categorization":
+            return True
+        elif options[menu_entry_index] == "Back to previous menu without saving changes":
+            console.print("[yellow]Returning to previous menu without applying category changes.[/yellow]")
+            return False
     
-    return True  # Indicate changes were saved 
+    return True 
