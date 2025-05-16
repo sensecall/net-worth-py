@@ -1,4 +1,5 @@
 import json
+import csv # For CSV export
 import readchar # For reading single key presses
 import sys # For sys.exit()
 import os # For os.path.exists()
@@ -36,15 +37,38 @@ console = Console()
 DATA_FILENAME = "net_worth_data.json"
 CURRENT_DATA_FILE = DATA_FILENAME  # Track the currently active data file
 
+def display_app_title():
+    """Displays a visually appealing application title."""
+    title_text = Text("Net Worth Tracker", style="bold green")
+    subtitle_text = Text("Track your financial journey", style="italic dim")
+    
+    console.print(title_text, justify="center")
+    console.print(subtitle_text, justify="center")
+    console.print() # Add a blank line for spacing
+
 def check_existing_data():
     """Checks for existing data files and prompts user with options."""
     global CURRENT_DATA_FILE
     
+    display_app_title() # Display the title first
+
     if os.path.exists(DATA_FILENAME):
-        console.print(f"[yellow]We spotted a JSON file ([cyan]{DATA_FILENAME}[/cyan]) which looks like it contains your net worth history.[/yellow]")
+        console.print(
+            Panel(
+                Text.assemble(
+                    ("We spotted a JSON file (", "white"),
+                    (DATA_FILENAME, "cyan bold"),
+                    (") which looks like it contains your net worth history.", "white")
+                ),
+                title="[bold yellow]Existing Data Found[/bold yellow]",
+                border_style="yellow",
+                padding=(1, 2)
+            )
+        )
+        console.print() # Add a blank line for spacing
         
         options = [
-            "Load this existing file",
+            f"Load existing file ({DATA_FILENAME})",
             "Start fresh (creates a new file, won't overwrite existing data)",
             "Open a different data file",
             "Exit application"
@@ -61,11 +85,11 @@ def check_existing_data():
             console.print("\n[yellow]Exiting application. Goodbye![/yellow]")
             sys.exit()
             
-        if selected_option == "Load this existing file":
+        if selected_option == f"Load existing file ({DATA_FILENAME})":
             console.print(f"\n[green]Loading data from [cyan]{DATA_FILENAME}[/cyan]...[/green]")
             CURRENT_DATA_FILE = DATA_FILENAME
             return load_historical_data()
-        elif selected_option == "Start fresh":
+        elif selected_option == "Start fresh (creates a new file, won't overwrite existing data)":
             # Generate a new filename to avoid overwriting the existing file
             filename_without_ext = os.path.splitext(DATA_FILENAME)[0]
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -714,7 +738,7 @@ def calculate_summary_stats(assets, all_historical_records=None):
 
 def asset_management_screen(all_historical_records, current_assets, current_date):
     """
-    Displays the asset management screen for viewing and editing assets.
+    Displays the asset management screen for viewing and editing assets with direct key press actions.
     
     Args:
         all_historical_records: List of all historical records
@@ -722,42 +746,36 @@ def asset_management_screen(all_historical_records, current_assets, current_date
         current_date: Current date string
         
     Returns:
-        Tuple of (updated_assets, updated_historical_records, changes_made)
+        Tuple of (updated_assets, updated_historical_records, changes_made_overall)
     """
-    changes_made = False
+    changes_made_overall = False
     
     while True:
+        console.clear()
         # Display header
         console.print("\n[bold blue]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold blue]")
         console.print("[bold blue]ASSET MANAGEMENT[/bold blue]")
         console.print("[bold blue]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold blue]")
         
         # Calculate net worth summary
-        total_assets = sum(asset.get('balance', 0.0) for asset in current_assets if asset.get('balance', 0.0) > 0)
-        total_debts = sum(asset.get('balance', 0.0) for asset in current_assets if asset.get('balance', 0.0) < 0)
-        net_worth = total_assets + total_debts  # debts are already negative
-        liquid_assets = sum(asset.get('balance', 0.0) for asset in current_assets 
-                          if asset.get('balance', 0.0) > 0 and asset.get('liquid', False))
+        total_assets_val = sum(asset.get('balance', 0.0) for asset in current_assets if asset.get('balance', 0.0) > 0)
+        total_debts_val = sum(asset.get('balance', 0.0) for asset in current_assets if asset.get('balance', 0.0) < 0)
+        net_worth_val = total_assets_val + total_debts_val
+        liquid_assets_val = sum(asset.get('balance', 0.0) for asset in current_assets 
+                              if asset.get('balance', 0.0) > 0 and asset.get('liquid', False))
         
-        # Display net worth summary
         console.print()
-        console.print(f"[bold]Net Worth:[/bold] [{'green' if net_worth >= 0 else 'red'}]£{net_worth:,.2f}[/{'green' if net_worth >= 0 else 'red'}]")
-        console.print(f"[bold]Total Assets:[/bold] [green]£{total_assets:,.2f}[/green]")
-        console.print(f"[bold]Total Debts:[/bold] [red]£{total_debts:,.2f}[/red]")
-        console.print(f"[bold]Liquid Assets:[/bold] [cyan]£{liquid_assets:,.2f}[/cyan]")
+        console.print(f"[bold]Net Worth:[/bold] [{'green' if net_worth_val >= 0 else 'red'}]£{net_worth_val:,.2f}[/{'green' if net_worth_val >= 0 else 'red'}]")
+        console.print(f"[bold]Total Assets:[/bold] [green]£{total_assets_val:,.2f}[/green]")
+        console.print(f"[bold]Total Debts:[/bold] [red]£{total_debts_val:,.2f}[/red]")
+        console.print(f"[bold]Liquid Assets:[/bold] [cyan]£{liquid_assets_val:,.2f}[/cyan]")
         console.print()
         
-        # Show assets in a simpler table format with better colours
         if current_assets:
-            # Display assets in a Rich Table format
             table = Table(
                 title=Text("Current Assets", style="bold"),
-                show_header=True,
-                header_style="bold",
-                box=box.SIMPLE,
-                padding=(0, 1)
+                show_header=True, header_style="bold", box=box.SIMPLE, padding=(0, 1)
             )
-            
             table.add_column("#", style="dim", width=4, justify="right")
             table.add_column("Asset Name", min_width=20)
             table.add_column("Balance", justify="right", min_width=15)
@@ -770,76 +788,93 @@ def asset_management_screen(all_historical_records, current_assets, current_date
                 balance_style = "green" if balance >= 0 else "red"
                 balance_str = Text(f"£{balance:,.2f}", style=balance_style)
                 category = asset.get("category", "Other")
-                
-                table.add_row(
-                    str(idx),
-                    asset["name"],
-                    balance_str,
-                    category,
-                    liquid_status
-                )
-            
+                table.add_row(str(idx), asset["name"], balance_str, category, liquid_status)
             console.print(table)
             
-            # Instructions for the user
             console.print("\n[bold]Options:[/bold]")
-            console.print(" • Enter [bold]asset number[/bold] to edit/manage that asset")
-            console.print(" • Press [bold]a[/bold] to add a new asset")
-            console.print(" • Press [bold]q[/bold] to return to dashboard")
+            console.print(" • Press [cyan]m[/cyan] then asset # to manage")
+            console.print(" • Press [cyan]a[/cyan] to add new asset")
+            console.print(" • Press [cyan]h[/cyan] to view all asset history")
+            console.print(" • Press [cyan]q[/cyan] to return to dashboard")
+        else:
+            console.print("[yellow]No assets defined yet.[/yellow]")
+            console.print("\n[bold]Options:[/bold]")
+            console.print(" • Press [cyan]a[/cyan] to add new asset")
+            console.print(" • Press [cyan]h[/cyan] to view history (if any)")
+            console.print(" • Press [cyan]q[/cyan] to return to dashboard")
 
-            # Get direct input from user for asset selection
-            user_input = console.input("\nEnter option: ").strip().lower()
-            
-            # Process user input
-            if user_input == 'q':
+        console.print("\nEnter action: ", end="")
+        try:
+            key = readchar.readkey()
+            console.print(key) # Echo the key
+            console.print() # Newline after key echo
+
+            if key.lower() == 'q':
                 console.print("[yellow]Returning to dashboard...[/yellow]")
-                return current_assets, all_historical_records, changes_made
-            elif user_input == 'a':
-                # Add new asset logic
-                new_asset_added = add_new_asset(current_assets)
+                return current_assets, all_historical_records, changes_made_overall
+            
+            elif key.lower() == 'a':
+                new_asset_added = add_new_asset(current_assets) # add_new_asset should return True if asset added
                 if new_asset_added:
-                    changes_made = True
+                    changes_made_overall = True
                     save_historical_data(all_historical_records, current_date, current_assets)
                     console.print("[green]New asset added and saved successfully.[/green]")
+                    # Loop continues, will refresh screen
+                else:
+                    console.print("[yellow]Add asset cancelled.[/yellow]")
+                console.input("Press Enter to continue...") # Pause to see message
                 continue
-            else:
-                # Try to parse as an asset number
+
+            elif key.lower() == 'h':
+                if all_historical_records or current_assets: # Allow viewing even if only current assets exist for structure
+                    view_all_asset_updates_table(all_historical_records if all_historical_records else [{"date": current_date, "assets": current_assets}])
+                else:
+                    console.print("[yellow]No data available to view.[/yellow]")
+                    console.input("Press Enter to continue...")
+                continue # Refreshes asset_management_screen
+            
+            elif key.lower() == 'm':
+                if not current_assets:
+                    console.print("[red]No assets to manage.[/red]")
+                    console.input("Press Enter to continue...")
+                    continue
+                
                 try:
-                    asset_idx = int(user_input) - 1  # Convert to 0-based index
+                    asset_num_str = console.input("Enter asset number to manage: ").strip()
+                    if not asset_num_str: # User pressed Enter without typing a number
+                        console.print("[yellow]No asset number entered. Returning to options.[/yellow]")
+                        console.input("Press Enter to continue...")
+                        continue
+
+                    asset_idx = int(asset_num_str) - 1
                     if 0 <= asset_idx < len(current_assets):
-                        # Show asset management options for the selected asset
-                        changes_made_this_round = manage_single_asset(current_assets, asset_idx, all_historical_records, current_date)
-                        if changes_made_this_round:
-                            changes_made = True
+                        console.clear() # Clear before showing single asset management
+                        changes_made_this_session = manage_single_asset(current_assets, asset_idx, all_historical_records, current_date)
+                        if changes_made_this_session:
+                            changes_made_overall = True
+                            # Data is saved within manage_single_asset if changes occur
+                        # Loop continues, will refresh screen
                     else:
                         console.print(f"[red]Invalid asset number. Please enter a number between 1 and {len(current_assets)}.[/red]")
                 except ValueError:
-                    console.print("[red]Invalid input. Please enter an asset number, 'a' to add, or 'q' to quit.[/red]")
-        else:
-            console.print("[yellow]No assets defined yet.[/yellow]")
-            
-            # Options when no assets exist
-            console.print("\n[bold]Options:[/bold]")
-            console.print(" • Press [bold]a[/bold] to add a new asset")
-            console.print(" • Press [bold]q[/bold] to return to dashboard")
-            
-            user_input = console.input("\nEnter option: ").strip().lower()
-            
-            if user_input == 'q':
-                console.print("[yellow]Returning to dashboard...[/yellow]")
-                return current_assets, all_historical_records, changes_made
-            elif user_input == 'a':
-                # Add new asset logic
-                new_asset_added = add_new_asset(current_assets)
-                if new_asset_added:
-                    changes_made = True
-                    save_historical_data(all_historical_records, current_date, current_assets)
-                    console.print("[green]New asset added and saved successfully.[/green]")
+                    console.print("[red]Invalid input. Please enter a valid number.[/red]")
+                except Exception as e_manage: # Catch any other errors during manage input
+                    console.print(f"[red]An error occurred: {e_manage}[/red]")
+                console.input("Press Enter to continue...")
                 continue
             else:
-                console.print("[red]Invalid input. Please enter 'a' to add an asset or 'q' to quit.[/red]")
+                console.print(f"[red]Invalid option: '{key}'.[/red]")
+                console.input("Press Enter to continue...")
+                continue
+        
+        except Exception as e:
+            console.print(f"[bold red]An unexpected error occurred in asset management: {e}[/bold red]")
+            console.input("Press Enter to continue...")
+            # Decide if to break or continue, for now continue to allow retry
+            continue
     
-    return current_assets, all_historical_records, changes_made
+    # This line might not be reached if always returning from loop, but good for structure
+    return current_assets, all_historical_records, changes_made_overall
 
 def add_new_asset(assets):
     """
@@ -914,99 +949,164 @@ def update_asset_in_history(all_historical_records, asset_name, field_to_update,
                     records_updated += 1
     return records_updated
 
+def rename_asset_in_history(all_historical_records, old_name, new_name):
+    """Renames an asset across all historical records."""
+    records_affected = 0
+    for record in all_historical_records:
+        asset_found_in_record = False
+        for asset in record.get('assets', []):
+            if asset.get('name') == old_name:
+                asset['name'] = new_name
+                asset_found_in_record = True
+        if asset_found_in_record:
+            records_affected += 1
+    return records_affected
+
 def manage_single_asset(assets, asset_idx, all_historical_records, current_date):
     """
-    Manage a single asset by index.
+    Manage a single asset by index using direct key presses.
     
     Args:
-        assets: List of all assets
-        asset_idx: Index of the asset to manage
+        assets: List of all assets (current snapshot)
+        asset_idx: Index of the asset to manage in the 'assets' list
         all_historical_records: All historical records
-        current_date: Current date string
+        current_date: Current date string for saving purposes
         
     Returns:
-        bool: True if changes were made, False otherwise
+        bool: True if changes were made that require saving, False otherwise
     """
-    asset = assets[asset_idx]
-    changes_made = False
-    
-    # Display the selected asset details
-    console.print(f"\n[bold]Managing Asset: [/bold]{asset['name']}")
-    console.print(f"Balance: [{'green' if asset['balance'] >= 0 else 'red'}]£{asset['balance']:,.2f}[/{'green' if asset['balance'] >= 0 else 'red'}]")
-    console.print(f"Category: {asset.get('category', 'Other')}")
-    console.print(f"Liquid: [{'green' if asset['liquid'] else 'red'}]{('Yes' if asset['liquid'] else 'No')}[/{'green' if asset['liquid'] else 'red'}]")
-    
-    # Show options for this asset
-    console.print("\n[bold]Options:[/bold]")
-    console.print(" 1. Update balance")
-    console.print(" 2. Change category")
-    console.print(" 3. Toggle liquidity status")
-    console.print(" 4. Delete asset")
-    console.print(" 5. View balance history")
-    console.print(" 6. Return to asset list")
-    
-    option = console.input("\nSelect option (1-6): ").strip()
-    
-    if option == '1':
-        # Update balance
-        while True:
+    if not (0 <= asset_idx < len(assets)):
+        console.print("[red]Invalid asset index for management.[/red]")
+        return False
+        
+    original_asset_name = assets[asset_idx]["name"] # Store for potential rename history update
+    changes_made_session = False
+
+    while True:
+        console.clear()
+        asset = assets[asset_idx] # Re-fetch in case of rename
+        
+        console.print(f"\n[bold underline]Managing Asset: {asset['name']}[/bold underline]")
+        console.print(f"Current Balance: [{'green' if asset['balance'] >= 0 else 'red'}]£{asset['balance']:,.2f}[/{'green' if asset['balance'] >= 0 else 'red'}]")
+        console.print(f"Category: {asset.get('category', 'Other')}")
+        console.print(f"Liquidity: [{'green' if asset['liquid'] else 'red'}]{('Yes' if asset['liquid'] else 'No')}[/{'green' if asset['liquid'] else 'red'}]")
+        
+        console.print("\n[bold]Actions:[/bold]")
+        console.print(" [cyan]b[/cyan]: Update Balance")
+        console.print(" [cyan]c[/cyan]: Change Category")
+        console.print(" [cyan]t[/cyan]: Toggle Liquidity")
+        console.print(" [cyan]r[/cyan]: Rename Asset")
+        console.print(" [cyan]x[/cyan]: Delete Asset")
+        console.print(" [cyan]h[/cyan]: View Balance History")
+        console.print(" [cyan]q[/cyan]: Return to Asset List")
+        
+        console.print("\nSelect action: ", end="")
+        key = readchar.readkey()
+        console.print(key) # Echo key
+        console.print() # Newline
+
+        action_taken_this_iteration = False
+
+        if key.lower() == 'q':
+            break # Exit the management loop for this asset
+
+        elif key.lower() == 'b':
+            console.print("--- Update Balance ---")
+            console.print(f"This updates the balance for [bold]'{asset['name']}'[/bold] in the record for [cyan]{current_date}[/cyan].") # CLARIFICATION ADDED HERE
             balance_input = console.input(f"Enter new balance for [bold]'{asset['name']}'[/bold] (current: £{asset['balance']:,.2f}): ").strip()
             if not balance_input:
                 console.print("[yellow]No input. Keeping current balance.[/yellow]")
-                break
-            try:
-                new_balance = float(balance_input)
-                asset['balance'] = new_balance
-                console.print(f"Balance updated to [{'green' if new_balance >= 0 else 'red'}]£{new_balance:,.2f}[/{'green' if new_balance >= 0 else 'red'}]")
-                changes_made = True
-                save_historical_data(all_historical_records, current_date, assets)
-                break
-            except ValueError:
-                console.print("[red]Invalid input. Please enter a numeric value.[/red]")
-    
-    elif option == '2':
-        # Change category
-        set_asset_category(asset, console)
-        changes_made = True
-        save_historical_data(all_historical_records, current_date, assets)
-    
-    elif option == '3':
-        # Toggle liquidity status
-        new_liquid_status = not asset['liquid']
-        if Confirm.ask(
-            f"Change [bold]'{asset['name']}'[/bold] to [{'green' if new_liquid_status else 'red'}]{('liquid' if new_liquid_status else 'non-liquid')}[/{'green' if new_liquid_status else 'red'}] for all historical entries?",
-            default=True
-        ):
-            records_updated = update_asset_in_history(all_historical_records, asset['name'], 'liquid', new_liquid_status)
-            asset['liquid'] = new_liquid_status
-            changes_made = True
-            save_historical_data(all_historical_records, current_date, assets)
-            console.print(f"[green]Updated liquidity status in {records_updated} historical records.[/green]")
+            else:
+                try:
+                    new_balance = float(balance_input)
+                    asset['balance'] = new_balance
+                    console.print(f"Balance updated to [{'green' if new_balance >= 0 else 'red'}]£{new_balance:,.2f}[/{'green' if new_balance >= 0 else 'red'}]")
+                    changes_made_session = True
+                    action_taken_this_iteration = True
+                except ValueError:
+                    console.print("[red]Invalid input. Please enter a numeric value.[/red]")
+        
+        elif key.lower() == 'c':
+            console.print("--- Change Category ---")
+            # set_asset_category updates the asset in-place and returns True if changed
+            if set_asset_category(asset, console):
+                 changes_made_session = True
+                 action_taken_this_iteration = True
+        
+        elif key.lower() == 't':
+            console.print("--- Toggle Liquidity ---")
+            new_liquid_status = not asset['liquid']
+            if Confirm.ask(
+                f"Change [bold]'{asset['name']}'[/bold] to [{'green' if new_liquid_status else 'red'}]{('liquid' if new_liquid_status else 'non-liquid')}[/{'green' if new_liquid_status else 'red'}] for all historical entries?",
+                default=True
+            ):
+                records_updated = update_asset_in_history(all_historical_records, asset['name'], 'liquid', new_liquid_status)
+                asset['liquid'] = new_liquid_status # Update current asset view
+                changes_made_session = True
+                action_taken_this_iteration = True
+                console.print(f"[green]Updated liquidity status in {records_updated} historical records.[/green]")
+            else:
+                console.print("[yellow]Liquidity status change cancelled.[/yellow]")
+
+        elif key.lower() == 'r': # Rename Asset
+            console.print("--- Rename Asset ---")
+            console.print("[yellow]WARNING: This will rename the asset in the current record AND all historical entries if confirmed later.[/yellow]") # WARNING ADDED
+            old_name_for_history = asset["name"] 
+            new_name_input = console.input(f"Enter new name for [bold]'{asset['name']}'[/bold]: ").strip()
+            
+            if not new_name_input:
+                console.print("[yellow]No new name entered. Rename cancelled.[/yellow]")
+            elif new_name_input == asset["name"]:
+                console.print("[yellow]New name is the same as the current name. No change.[/yellow]")
+            # DUPLICATE CHECK ADDED HERE (checks against other assets in the current list)
+            elif any(a['name'] == new_name_input for i, a in enumerate(assets) if i != asset_idx):
+                console.print(f"[red]Error: An asset with the name '{new_name_input}' already exists in the current asset list. Please choose a unique name.[/red]")
+            else:
+                # Current asset name update and historical update confirmation will follow here
+                asset["name"] = new_name_input
+                console.print(f"Asset name updated to [bold]'{new_name_input}'[/bold] in the current working record.")
+                if Confirm.ask(f"Rename this asset in all {len(all_historical_records)} historical records as well?", default=True):
+                    renamed_in_history_count = rename_asset_in_history(all_historical_records, old_name_for_history, new_name_input)
+                    console.print(f"[green]Renamed asset in {renamed_in_history_count} historical records.[/green]")
+                changes_made_session = True
+                action_taken_this_iteration = True
+
+        elif key.lower() == 'x': # Delete Asset
+            console.print("--- Delete Asset ---")
+            if Confirm.ask(f"Are you sure you want to delete [bold]'{asset['name']}'[/bold]? This will remove it from the current record.", default=False):
+                deleted_asset_name = assets.pop(asset_idx)["name"]
+                console.print(f"[yellow]Asset '{deleted_asset_name}' deleted from current record.[/yellow]")
+                # Note: This does not remove it from historical records by default.
+                # That would be a more complex operation, maybe a separate utility.
+                changes_made_session = True
+                # After deletion, this asset_idx is no longer valid for the 'assets' list in this scope.
+                # We must return to the caller (asset_management_screen) to re-evaluate.
+                save_historical_data(all_historical_records, current_date, assets) # Save immediately after deletion
+                console.input("Press Enter to return to asset list...")
+                return changes_made_session # Exit function, asset_idx invalid
+            else:
+                console.print("[yellow]Deletion cancelled.[/yellow]")
+
+        elif key.lower() == 'h':
+            console.print("--- View Balance History ---")
+            view_asset_history(asset['name'], all_historical_records)
+            action_taken_this_iteration = True # Viewing history is an action, pause needed
+        
         else:
-            console.print("[yellow]Liquidity status change cancelled.[/yellow]")
-    
-    elif option == '4':
-        # Delete asset
-        if Confirm.ask(f"Are you sure you want to delete [bold]'{asset['name']}'[/bold]?", default=False):
-            assets.pop(asset_idx)
-            console.print(f"[yellow]Asset '{asset['name']}' deleted.[/yellow]")
-            changes_made = True
+            console.print(f"[red]Invalid option: '{key}'[/red]")
+            action_taken_this_iteration = True # Show message, then pause
+
+        if changes_made_session and action_taken_this_iteration:
+            # Save if any change was made AND an action was taken that should pause
             save_historical_data(all_historical_records, current_date, assets)
-        else:
-            console.print("[yellow]Deletion cancelled.[/yellow]")
-    
-    elif option == '5':
-        # View balance history
-        view_asset_history(asset['name'], all_historical_records)
-    
-    elif option == '6':
-        # Return to asset list
-        pass
-    
-    else:
-        console.print("[red]Invalid option. Returning to asset list.[/red]")
-    
-    return changes_made
+            console.print("[green]Current changes saved.[/green]")
+
+        if action_taken_this_iteration and key.lower() != 'q':
+             # Pause to see the result of the action, unless it was quitting
+             # or an action that forces immediate return (like delete)
+            console.input("Press Enter to continue managing this asset...")
+            
+    return changes_made_session
 
 def view_asset_history(asset_name, all_historical_records):
     """
@@ -1109,8 +1209,226 @@ def view_asset_history(asset_name, all_historical_records):
     console.print("\n[dim]Press Enter to return...[/dim]")
     console.input()
 
+def export_data_to_csv(data_for_csv, default_filename="asset_updates.csv"):
+    """Exports the given data to a CSV file."""
+    if not data_for_csv:
+        console.print("[yellow]No data available to export.[/yellow]")
+        return
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = default_filename.replace(".csv", f"_{timestamp}.csv")
+    
+    try:
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            # Write headers (assuming the first row in data_for_csv can be used for headers or define them explicitly)
+            headers = ["Date", "Asset Name", "Category", "Liquid", "Balance", "Change Since Last"]
+            writer.writerow(headers)
+            # Write data rows
+            for row in data_for_csv:
+                writer.writerow(row)
+        console.print(f"[green]Data exported successfully to [cyan]{filename}[/cyan][/green]")
+    except IOError:
+        console.print(f"[bold red]Error: Could not write to file [cyan]{filename}[/cyan][/bold red]")
+    except Exception as e:
+        console.print(f"[bold red]An unexpected error occurred during CSV export: {e}[/bold red]")
+
+def view_all_asset_updates_table(all_historical_records):
+    """
+    Displays a pivot table with 'Date' fixed left. Other columns (assets, TNW, Change)
+    have uniform width and scroll horizontally. Headers wrap to 3 lines & truncate.
+    Args:
+        all_historical_records: List of all historical records.
+    """
+    if not all_historical_records:
+        console.print("[yellow]No historical data to display.[/yellow]")
+        console.print("\n[dim]Press Enter to return...[/dim]")
+        readchar.readkey()
+        return
+
+    date_col_name = "Date"
+    tnw_col_name = "Total Net Worth"
+    change_col_name = "Change" # Change in TNW
+    asset_names_only = sorted(list(set(asset['name'] for record in all_historical_records for asset in record.get('assets', []))))
+
+    if not asset_names_only:
+        console.print("[yellow]No assets found in historical data to display.[/yellow]")
+        console.print("\n[dim]Press Enter to return...[/dim]")
+        readchar.readkey()
+        return
+
+    scrollable_column_names = asset_names_only + [tnw_col_name, change_col_name]
+    cell_horizontal_padding = 1 # Standard Rich table cell padding on one side
+    date_col_content_width = 12
+
+    # --- 2. Prepare full data for display and CSV & Determine max_scrollable_content_width ---
+    processed_rows = []
+    csv_export_rows = []
+    csv_headers = [date_col_name] + scrollable_column_names
+    csv_export_rows.append(csv_headers)
+    all_dates_sorted = sorted(list(set(record['date'] for record in all_historical_records)))
+    previous_tnw_for_change_calc = None
+    max_scrollable_content_len = 0
+
+    for date_str in all_dates_sorted:
+        row_display_data = {}
+        row_csv_data = [date_str]
+        try:
+            row_display_data[date_col_name] = Text(datetime.strptime(date_str, "%Y-%m-%d").strftime("%d %b %Y"), style="dim")
+        except ValueError:
+            row_display_data[date_col_name] = Text(date_str, style="dim")
+
+        record_for_date = next((r for r in all_historical_records if r['date'] == date_str), None)
+        balances_for_date = {asset['name']: asset['balance'] for asset in record_for_date.get('assets', [])} if record_for_date else {}
+        current_tnw_for_this_date = 0
+
+        for asset_name in asset_names_only:
+            balance = balances_for_date.get(asset_name, 0.0)
+            current_tnw_for_this_date += balance
+            style = "green" if balance >= 0 else "red"
+            text_val = Text(f"£{balance:,.2f}", style=style if balance != 0 else "dim")
+            row_display_data[asset_name] = text_val
+            max_scrollable_content_len = max(max_scrollable_content_len, len(str(text_val)))
+            row_csv_data.append(f"{balance:.2f}")
+
+        # Total Net Worth - now bold
+        tnw_style = "green bold" if current_tnw_for_this_date >= 0 else "red bold"
+        tnw_text_val = Text(f"£{current_tnw_for_this_date:,.2f}", style=tnw_style)
+        row_display_data[tnw_col_name] = tnw_text_val
+        max_scrollable_content_len = max(max_scrollable_content_len, len(str(tnw_text_val)))
+        row_csv_data.append(f"{current_tnw_for_this_date:.2f}")
+
+        # Change in Total Net Worth - as percentage, bold, max 2dp
+        change_display_text = Text("N/A", style="dim bold") # Default to bold N/A
+        change_csv_val = "N/A"
+        if previous_tnw_for_change_calc is not None:
+            diff = current_tnw_for_this_date - previous_tnw_for_change_calc
+            if previous_tnw_for_change_calc == 0:
+                if diff == 0:
+                    percentage_change = 0.0
+                    ch_style = "dim bold"
+                    symbol = "→"
+                    change_display_text = Text(f"{symbol} {percentage_change:.2f}%", style=ch_style)
+                else:
+                    # Percentage change is infinite or undefined, display N/A or specific symbol
+                    ch_style = "dim bold"
+                    change_display_text = Text("N/A", style=ch_style) 
+                change_csv_val = "N/A" # Or appropriate representation for CSV
+            else:
+                percentage_change = (diff / abs(previous_tnw_for_change_calc)) * 100
+                ch_style = "green bold" if diff > 0 else "red bold" if diff < 0 else "dim bold"
+                symbol = "↑" if diff > 0 else "↓" if diff < 0 else "→"
+                change_display_text = Text(f"{symbol} {percentage_change:.2f}%", style=ch_style)
+                change_csv_val = f"{percentage_change:.2f}%"
+        
+        row_display_data[change_col_name] = change_display_text
+        max_scrollable_content_len = max(max_scrollable_content_len, len(str(change_display_text)))
+        row_csv_data.append(change_csv_val)
+        
+        previous_tnw_for_change_calc = current_tnw_for_this_date
+        processed_rows.append(row_display_data)
+        csv_export_rows.append(row_csv_data)
+    
+    # Ensure a minimum sensible width for scrollable columns if all values are tiny
+    uniform_scrollable_content_width = max(max_scrollable_content_len, 8) # Min content width of 8 for scrollable
+
+    # --- 3. Scrolling and Table Rendering Loop ---
+    current_page_start_idx = 0
+
+    while True:
+        console.clear()
+
+        padded_date_col_total_width = date_col_content_width + 2 * cell_horizontal_padding
+        width_consumed_by_fixed_date_and_structure = padded_date_col_total_width + 3 # 1 left edge, 1 sep after Date, 1 right edge
+        available_width_for_scrollable_section = console.width - width_consumed_by_fixed_date_and_structure
+        
+        cost_per_scrollable_col_and_its_separator = (uniform_scrollable_content_width + 2 * cell_horizontal_padding) + 1 # +1 for its separator
+
+        num_scrollable_cols_on_page = 0
+        if available_width_for_scrollable_section > (uniform_scrollable_content_width + 2 * cell_horizontal_padding): # Can at least one col fit?
+            num_scrollable_cols_on_page = max(1, available_width_for_scrollable_section // cost_per_scrollable_col_and_its_separator)
+        elif len(scrollable_column_names) > 0 : # If not, but we have cols, try to show one (it will likely be messy)
+             num_scrollable_cols_on_page = 1
+        
+        page_end_idx = min(current_page_start_idx + num_scrollable_cols_on_page, len(scrollable_column_names))
+        scrollable_cols_this_page = scrollable_column_names[current_page_start_idx:page_end_idx]
+
+        table = Table(
+            title=Text("Asset Balances (Date Fixed, Others Scroll, Uniform Width)", style="bold blue"),
+            show_header=True, header_style="bold magenta", box=box.ROUNDED,
+            width=console.width
+        )
+
+        table.add_column(date_col_name, min_width=date_col_content_width)
+
+        for col_name in scrollable_cols_this_page:
+            header_text_obj = Text(col_name)
+            wrapped_header_lines = header_text_obj.wrap(console, uniform_scrollable_content_width)
+            
+            final_header_lines = []
+            for i, line in enumerate(wrapped_header_lines):
+                if i < 2: # First two lines
+                    final_header_lines.append(line)
+                elif i == 2: # Third line
+                    if len(wrapped_header_lines) > 3:
+                        # If there are more than 3 lines, truncate 3rd line and add ellipsis
+                        # This requires converting Text to str, truncating, then back to Text
+                        line_str = str(line)
+                        if len(line_str) > uniform_scrollable_content_width - 3:
+                             final_header_lines.append(Text(line_str[:uniform_scrollable_content_width-3] + "...", style=line.style))
+                        else:
+                             final_header_lines.append(Text(str(line) + "...", style=line.style))
+                    else: # Exactly 3 lines or less
+                        final_header_lines.append(line)
+                    break # Stop after 3rd line processing
+            
+            actual_header = Text("\n").join(final_header_lines) if final_header_lines else Text(col_name) # Fallback to col_name if empty
+            table.add_column(actual_header, justify="right", min_width=uniform_scrollable_content_width)
+        
+        for row_data_map in processed_rows:
+            display_row_values = [row_data_map[date_col_name]]
+            for col_name in scrollable_cols_this_page:
+                display_row_values.append(row_data_map.get(col_name, Text("-", style="dim")))
+            table.add_row(*display_row_values)
+        
+        console.print(table)
+
+        scroll_indicator = ""
+        if current_page_start_idx > 0:
+            scroll_indicator += "[cyan]< Left[/cyan]  "
+        if page_end_idx < len(scrollable_column_names):
+            scroll_indicator += "[cyan]Right >[/cyan]"
+        
+        console.print(f"\n[bold]Options:[/bold] {scroll_indicator}  Press [cyan]c[/cyan] to export, [cyan]q[/cyan] to return.")
+
+        try:
+            key = readchar.readkey()
+            if key.lower() == 'c':
+                export_pivot_data_to_csv(csv_export_rows, default_filename="asset_pivot_view.csv")
+            elif key.lower() == 'q':
+                console.clear()
+                break
+            elif key == readchar.key.RIGHT:
+                if page_end_idx < len(scrollable_column_names):
+                    current_page_start_idx += num_scrollable_cols_on_page
+            elif key == readchar.key.LEFT:
+                if current_page_start_idx > 0:
+                    # To go left, recalculate based on what *would* have been displayed
+                    # This is tricky if the number of cols per page varies based on previous page start
+                    # For uniform width, it is simpler: just jump back by the current num_scrollable_cols_on_page
+                    current_page_start_idx = max(0, current_page_start_idx - num_scrollable_cols_on_page)
+        except Exception as e:
+            console.print(f"[red]An error occurred: {e}. Returning to asset management.[/red]")
+            console.input("Press Enter to continue...") 
+            console.clear()
+            break
+
+# The export_pivot_data_to_csv function should still work if csv_export_rows is correct
+# ... existing code ...
+
 def main():
     """Main application loop."""
+    console.clear() # Clear the console at the start
     # Load custom categories and custom keywords for auto-categorization
     load_custom_keywords()
     
@@ -1225,7 +1543,7 @@ def main():
         # Handle menu selection
         if selected_option == "View/Edit Assets":
             # Call the asset management screen
-            current_assets, all_historical_records, changes_made = asset_management_screen(
+            current_assets, all_historical_records, changes_made_overall = asset_management_screen(
                 all_historical_records, 
                 current_assets, 
                 current_date

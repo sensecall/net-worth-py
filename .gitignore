@@ -42,3 +42,7 @@ coverage.xml
 
 # macOS specific
 .DS_Store 
+
+# csv files
+*.csv
+!example_data.csv
