@@ -1,482 +1,427 @@
 """
 Asset utilities for Net Worth Tracker.
-This module handles asset-related functionality like categorization.
+This module handles category and financial item related utilities.
 
-Data Schema:
------------
-The application stores data in the following JSON format:
-[
-    {
-        "date": "YYYY-MM-DD",
-        "assets": [
-            {
-                "name": "Asset Name",
-                "liquid": true/false,
-                "balance": 1000.00,
-                "category": "Category Name"
-            },
-            ...more assets
-        ]
-    },
-    ...more dated records
-]
-
-Each asset MUST have a name, liquid status, and balance.
-Each asset SHOULD have a category that matches one of the standard categories
-or a custom category defined by the user.
+New Data Schema:
+-----------------
+The application stores data in a single JSON object with three top-level keys:
+*   `categories`: List of category objects (`id` (str), `name` (str), `keywords` (list of str)).
+*   `financial_items`: List of unique asset/liability definitions (`id` (str), `name` (str), 
+                     `category_id` (str), `liquid` (bool), `type` (str: "asset" or "liability")).
+*   `snapshots`: List of dated entries (`date` (str: "YYYY-MM-DD"), `balances` (list of objects: 
+                 `item_id` (str), `balance` (float))).
 """
 
 from rich.text import Text
-from rich.prompt import Confirm # For confirming save before exit
+from rich.prompt import Confirm, Prompt # For confirming save before exit and for Prompt
 from simple_term_menu import TerminalMenu
 from rich.table import Table
 from rich.panel import Panel
 from rich import box
 from menu_utils import show_menu
+from core_logic import generate_unique_id # Added import
+import readchar # Ensure this import is present
 
-# UK-specific asset categories
-DEFAULT_CATEGORIES = [
-    "Property",
-    "Pension",
-    "ISA",
-    "Savings",
-    "Current Account",
-    "Investment",
-    "Mortgage",
-    "Loan",
-    "Credit Card",
-    "Business",
-    "Other"
-]
-
-# Rules for auto-categorizing assets based on names
-AUTO_CATEGORIZE_RULES = {
+# UK-specific asset categories (Initial source for default categories)
+_DEFAULT_CATEGORY_DATA = {
     "Property": ["house", "property", "flat", "apartment", "land"],
     "Pension": ["pension", "sipp", "retirement"],
     "ISA": ["isa", "ssisa"],
     "Savings": ["savings", "premium bonds", "saver", "saving"],
     "Current Account": ["current", "checking"],
     "Investment": ["shares", "stocks", "investment", "fund", "gia"],
-    "Mortgage": ["mortgage"],
-    "Loan": ["loan", "car finance", "personal loan"],
-    "Credit Card": ["credit", "cc"],
-    "Business": ["business"]
+    "Mortgage": ["mortgage"], # Typically a liability
+    "Loan": ["loan", "car finance", "personal loan"], # Typically a liability
+    "Credit Card": ["credit", "cc"], # Typically a liability
+    "Business": ["business"],
+    "Other": [] # Default, no specific keywords
 }
 
-# Store custom categories that users have added during the session
-CUSTOM_CATEGORIES = set()
-
 # Store custom keywords added by users (persisted between sessions)
-CUSTOM_KEYWORDS = {}
+# CUSTOM_KEYWORDS = {} # Removed
 
-def save_custom_keywords(filename="custom_keywords.json"):
-    """
-    Save custom keywords to a file.
-    
-    Args:
-        filename: File to save custom keywords to
-    """
-    import json
-    try:
-        with open(filename, 'w') as f:
-            json.dump(CUSTOM_KEYWORDS, f, indent=4)
-    except Exception as e:
-        print(f"Error saving custom keywords: {e}")
+# def save_custom_keywords(filename="custom_keywords.json"):
+#     """
+#     Save custom keywords to a file.
+#     
+#     Args:
+#         filename: File to save custom keywords to
+#     """
+#     import json
+#     try:
+#         with open(filename, 'w') as f:
+#             json.dump(CUSTOM_KEYWORDS, f, indent=4)
+#     except Exception as e:
+#         print(f"Error saving custom keywords: {e}")
 
-def load_custom_keywords(filename="custom_keywords.json"):
-    """
-    Load custom keywords from a file.
-    
-    Args:
-        filename: File to load custom keywords from
-    """
-    import json
-    import os
-    global CUSTOM_KEYWORDS
-    
-    if os.path.exists(filename):
-        try:
-            with open(filename, 'r') as f:
-                CUSTOM_KEYWORDS.update(json.load(f))
-        except Exception as e:
-            print(f"Error loading custom keywords: {e}")
+# def load_custom_keywords(filename="custom_keywords.json"):
+#     """
+#     Load custom keywords from a file.
+#     
+#     Args:
+#         filename: File to load custom keywords from
+#     """
+#     import json
+#     import os
+#     global CUSTOM_KEYWORDS
+#     
+#     if os.path.exists(filename):
+#         try:
+#             with open(filename, 'r') as f:
+#                 CUSTOM_KEYWORDS.update(json.load(f))
+#         except Exception as e:
+#             print(f"Error loading custom keywords: {e}")
 
-def add_custom_category(category_name):
+def get_default_categories():
     """
-    Adds a new custom category to the session.
-    
-    Args:
-        category_name (str): The name of the new category
-    """
-    global CUSTOM_CATEGORIES
-    CUSTOM_CATEGORIES.add(category_name)
-    # Initialize custom keywords for this category if it doesn't exist
-    if category_name not in CUSTOM_KEYWORDS:
-        CUSTOM_KEYWORDS[category_name] = []
+    Generates a list of default category objects.
+    Each category will have a unique ID and associated keywords.
+    This is used to populate categories if starting with no data file.
 
-def get_all_categories():
-    """
-    Returns all available categories (default + custom).
-    
     Returns:
-        list: Combined list of default and custom categories
+        list: A list of default category dictionaries, e.g.,
+              [{'id': 'cat_...', 'name': 'Property', 'keywords': ['house', ...]}, ...]
     """
-    return DEFAULT_CATEGORIES + sorted(list(CUSTOM_CATEGORIES - set(DEFAULT_CATEGORIES)))
+    default_categories_list = []
+    existing_ids_for_generation = [] # This will store full ID strings like ["cat_1", "cat_2"]
 
-def guess_category(asset_name):
+    for name, keywords in _DEFAULT_CATEGORY_DATA.items():
+        # Pass the list of already generated full ID strings and the correct prefix
+        cat_id_str = generate_unique_id(existing_ids_for_generation, prefix="cat_")
+        
+        default_categories_list.append({
+            "id": cat_id_str,
+            "name": name,
+            "keywords": keywords
+        })
+        existing_ids_for_generation.append(cat_id_str) # Add the new string ID to the list
+    return default_categories_list
+
+def guess_category(item_name: str, categories_list: list) -> str | None:
     """
-    Attempts to guess the category of an asset based on its name.
+    Attempts to guess the category ID of an item based on its name by checking keywords.
     
     Args:
-        asset_name (str): The name of the asset to categorize
+        item_name (str): The name of the item to categorize.
+        categories_list (list): A list of category objects 
+                                (e.g., [{'id': '...', 'name': '...', 'keywords': [...]}]).
         
     Returns:
-        str: Guessed category name
+        str | None: The ID of the guessed category, or None if no match is found.
     """
-    asset_name_lower = asset_name.lower()
+    item_name_lower = item_name.lower()
     
-    # Check built-in rules first
-    for category, keywords in AUTO_CATEGORIZE_RULES.items():
-        for keyword in keywords:
-            if keyword.lower() in asset_name_lower:
-                return category
+    for category in categories_list:
+        for keyword in category.get('keywords', []):
+            if keyword.lower() in item_name_lower:
+                return category['id']
     
-    # Then check custom rules
-    for category, keywords in CUSTOM_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword.lower() in asset_name_lower:
-                return category
-    
-    return "Other"  # Default category if no match is found
+    # Optional: Could try to find and return a default "Other" category ID if no keyword match
+    # For now, just returning None.
+    return None
 
-def set_asset_category_interactive(asset_name, console):
+def view_categories(categories_list: list, console):
     """
-    Interactively selects a category for an asset.
+    Displays all available categories with their IDs and keywords.
     
     Args:
-        asset_name (str): The name of the asset to categorize
-        console: Rich console object for output
-        
-    Returns:
-        str: Selected category name
-    """
-    guessed_category = guess_category(asset_name)
-    
-    console.print(f"\nSelect a category for [cyan]'{asset_name}'[/cyan]")
-    console.print(f"Suggested category: [green]{guessed_category}[/green]")
-    
-    all_categories = get_all_categories()
-    for idx, category in enumerate(all_categories, 1):
-        console.print(f"  {idx}. {category}")
-    
-    console.print(f"  C. Custom category")
-    console.print(f"  Enter. Accept suggested [{guessed_category}]")
-    
-    user_input = console.input("Your choice: ").strip()
-    
-    if not user_input:
-        return guessed_category
-    elif user_input.lower() == 'c':
-        custom_category = console.input("Enter custom category name: ").strip()
-        if custom_category:
-            add_custom_category(custom_category)
-            return custom_category
-        else:
-            return guessed_category
-    else:
-        try:
-            idx = int(user_input)
-            if 1 <= idx <= len(all_categories):
-                return all_categories[idx-1]
-            else:
-                console.print("[red]Invalid choice. Using suggested category.[/red]")
-                return guessed_category
-        except ValueError:
-            console.print("[red]Invalid input. Using suggested category.[/red]")
-            return guessed_category
-
-def set_asset_category(asset, console):
-    """
-    Set the category for an asset using a menu interface.
-    
-    Args:
-        asset: Asset dictionary to update
+        categories_list (list): A list of category objects 
+                                  (e.g., [{'id': '...', 'name': '...', 'keywords': [...]}]).
         console: Rich console object for output
     """
-    console.print(f"\n[bold]Setting category for:[/bold] [cyan]{asset['name']}[/cyan]")
-    if 'category' in asset:
-        console.print(f"[bold]Current category:[/bold] [yellow]{asset['category']}[/yellow]")
-    
-    # Get all available categories
-    all_categories = sorted(get_all_categories())
-    
-    # Add current category first if it exists and isn't in all_categories
-    if 'category' in asset and asset['category'] not in all_categories:
-        all_categories.insert(0, asset['category'])
-    
-    menu_index, selected_category = show_menu(
-        all_categories,
-        title="\nSelect a category:",
-        shortcuts=False
-    )
-    
-    if menu_index is not None:
-        asset['category'] = selected_category
-        console.print(f"[green]Set category to: [cyan]{selected_category}[/cyan][/green]")
-    else:
-        console.print("[yellow]Category change cancelled.[/yellow]")
-
-def load_custom_categories_from_data(all_historical_records):
-    """
-    Extracts and loads custom categories from existing user data.
-    
-    Args:
-        all_historical_records (list): List of historical net worth records
-    """
-    global CUSTOM_CATEGORIES
-    
-    if not all_historical_records:
+    if not categories_list:
+        console.print("[yellow]No categories defined yet.[/yellow]")
         return
-    
-    for record in all_historical_records:
-        if 'assets' in record:
-            for asset in record['assets']:
-                if 'category' in asset and asset['category'] not in DEFAULT_CATEGORIES:
-                    CUSTOM_CATEGORIES.add(asset['category'])
 
-def view_categories(console):
-    """
-    Displays all available categories (default and custom) with clean, simple formatting.
-    Also allows adding new custom categories.
-    
-    Args:
-        console: Rich console object for output
-    """
-    while True: # Loop to allow adding multiple categories
-        # Create header
-        console.print("\n[bold]AVAILABLE CATEGORIES[/bold]")
-        console.print("─" * 50)
-        
-        # Create table for default categories with simpler styling
-        default_table = Table(
-            title="Default Categories",
-            box=box.SIMPLE,
-            show_header=True,
-            header_style="bold",
-            padding=(0, 2)
-        )
-        
-        default_table.add_column("Category")
-        default_table.add_column("Auto-categorization Keywords", style="dim")
-        
-        # Add rows for default categories
-        for category in DEFAULT_CATEGORIES:
-            keywords = ", ".join(AUTO_CATEGORIZE_RULES.get(category, [])) or "None"
-            default_table.add_row(category, keywords)
-        
-        # Display the default categories table
-        console.print(default_table)
-        
-        # Create table for custom categories
-        custom_categories = sorted(list(CUSTOM_CATEGORIES - set(DEFAULT_CATEGORIES)))
-        
-        if custom_categories:
-            custom_table = Table(
-                title="Custom Categories",
-                box=box.SIMPLE,
-                show_header=True,
-                header_style="bold",
-                padding=(0, 2)
-            )
-            
-            custom_table.add_column("Category")
-            
-            # Add rows for custom categories
-            for category in custom_categories:
-                custom_table.add_row(category)
-            
-            # Display the custom categories table
-            console.print("\n")
-            console.print(custom_table)
-        else:
-            console.print("\n[dim]No custom categories defined yet.[/dim]")
-        
-        # Display options
-        options = [
-            "Add New Custom Category",
-            "Manage Category Keywords"
-        ]
-        
-        menu_index, selected_option = show_menu(
-            options,
-            title="\nSelect an option:"
-        )
-        
-        if menu_index is None:
-            console.print("[yellow]Returning to previous menu.[/yellow]")
-            break
-            
-        if selected_option == "Add New Custom Category":
-            new_category = console.input("\n[b magenta]Enter new category name: [/b magenta]").strip()
-            if new_category:
-                if new_category in DEFAULT_CATEGORIES:
-                    console.print(f"[red]'{new_category}' is already a default category.[/red]")
-                elif new_category in CUSTOM_CATEGORIES:
-                    console.print(f"[red]'{new_category}' is already a custom category.[/red]")
-                else:
-                    CUSTOM_CATEGORIES.add(new_category)
-                    save_custom_keywords()
-                    console.print(f"[green]Added new category: [cyan]{new_category}[/cyan][/green]")
-            else:
-                console.print("[yellow]No category name provided.[/yellow]")
-        elif selected_option == "Manage Category Keywords":
-            manage_category_keywords(console)
+    table = Table(title="Available Categories", box=box.ROUNDED, show_lines=True)
+    table.add_column("#", style="dim", width=4, justify="right")
+    table.add_column("ID", style="dim cyan", no_wrap=True)
+    table.add_column("Name", style="bold magenta")
+    table.add_column("Keywords", style="green")
 
-def manage_category_keywords(console):
-    """
-    UI for managing custom keywords for categories.
+    sorted_categories = sorted(categories_list, key=lambda c: c['name'])
     
+    for idx, category in enumerate(sorted_categories, 1):
+        keywords_str = ", ".join(category.get('keywords', [])) or "-"
+        table.add_row(str(idx), category['id'], category['name'], keywords_str)
+    
+    console.print(table)
+
+def manage_categories_interactive(categories_list: list, financial_items_list: list, console) -> list:
+    """
+    Provides a UI for managing categories: viewing, adding, editing, deleting.
+
     Args:
-        console: Rich console object for output
+        categories_list (list): The current list of category objects.
+        financial_items_list (list): The list of financial item objects (for checking dependencies).
+        console: Rich console object for output.
+
+    Returns:
+        list: The potentially modified list of category objects.
     """
-    # Load existing custom keywords
-    load_custom_keywords()
-    
+    changes_made = False # This tracks if any modification occurs during the session
     while True:
-        console.print("\n[bold]CATEGORY KEYWORD MANAGEMENT[/bold]")
-        console.print("─" * 50)
+        console.clear()
+        console.print(Panel("[bold cyan]Category Management[/bold cyan]", expand=False))
         
-        # Create a table to show all categories and their keywords
-        table = Table(
-            title="Categories and Keywords",
-            box=box.SIMPLE,
-            show_header=True,
-            header_style="bold",
-            padding=(0, 2)
-        )
-        
-        table.add_column("Category")
-        table.add_column("Default Keywords", style="dim")
-        table.add_column("Custom Keywords", style="green")
-        
-        # Add rows for each category
-        all_categories = get_all_categories()
-        for category in all_categories:
-            default_keywords = ", ".join(AUTO_CATEGORIZE_RULES.get(category, [])) or "None"
-            custom_keywords = ", ".join(CUSTOM_KEYWORDS.get(category, [])) or "None"
-            table.add_row(category, default_keywords, custom_keywords)
-        
-        console.print(table)
-        
-        # Options
-        options = []
-        
-        # Add category options
-        for category in all_categories:
-            options.append(f"Add keywords to: {category}")
-        
-        # Add utility options
-        options.append("Save changes")
-        
-        menu_index, selected_option = show_menu(
-            options,
-            title="\nSelect an option:"
-        )
-        
-        # Handle ESC/q
-        if menu_index is None:
-            if Confirm.ask("Save changes before exiting?", default=True, console=console):
-                save_custom_keywords()
-                console.print("[green]Custom keywords saved.[/green]")
-            console.print("[yellow]Returning to previous menu.[/yellow]")
-            return
-        
-        if selected_option == "Save changes":
-            save_custom_keywords()
-            console.print("[green]Custom keywords saved.[/green]")
-            if Confirm.ask("Return to previous menu?", default=False, console=console):
-                return
-        else:
-            # Adding keywords to a category
-            category = selected_option.replace("Add keywords to: ", "")
-            add_keywords_to_category(category, console)
+        view_categories(categories_list, console)
+        console.print()
 
-def add_keywords_to_category(category, console):
-    """
-    Add custom keywords to a category.
-    
-    Args:
-        category: Category to add keywords to
-        console: Rich console object for output
-    """
-    while True:
-        console.print(f"\n[bold]Adding Keywords to Category: [cyan]{category}[/cyan][/bold]")
-        console.print("─" * 50)
+        console.print("[bold]Actions:[/bold]")
+        console.print("  [cyan]a[/cyan] Add New Category")
+        console.print("  [cyan]e[/cyan] Edit Existing Category (select by number from table)")
+        console.print("  [cyan]d[/cyan] Delete Category (select by number from table)")
+        console.print("  [cyan]q[/cyan] Back to Main Menu")
+        console.print()
         
-        # Show current keywords
-        default_keywords = ", ".join(AUTO_CATEGORIZE_RULES.get(category, [])) or "None"
-        custom_keywords = ", ".join(CUSTOM_KEYWORDS.get(category, [])) or "None"
-        
-        console.print(f"[bold]Default Keywords:[/bold] {default_keywords}")
-        console.print(f"[bold]Custom Keywords:[/bold] [green]{custom_keywords}[/green]")
-        
-        # Options for keyword management
-        options = [
-            "Add a new keyword",
-            "Remove a keyword",
-            "Clear all custom keywords"
-        ]
-        
-        menu_index, selected_option = show_menu(
-            options,
-            title="\nSelect an option:"
-        )
-        
-        if menu_index is None:
-            break
+        console.print("Enter action: ", end="") # Prompt for action
+        action_key_pressed = readchar.readkey()
+        console.print(action_key_pressed) # Echo the key
+        console.print() # Newline after echo
+
+        action_key = action_key_pressed.lower()
+
+        if action_key == 'a': # Add New Category
+            console.print(Panel("[bold green]Add New Category[/bold green]", expand=False))
+            new_name = Prompt.ask("Enter category name", console=console).strip()
+            if not new_name:
+                console.print("[yellow]Category name cannot be empty.[/yellow]")
+                console.input("Press Enter to continue...") # Pause for user to read
+                continue
             
-        if selected_option == "Add a new keyword":
-            new_keyword = console.input("\n[b magenta]Enter new keyword: [/b magenta]").strip().lower()
-            if new_keyword:
-                if category not in CUSTOM_KEYWORDS:
-                    CUSTOM_KEYWORDS[category] = []
-                if new_keyword in CUSTOM_KEYWORDS[category]:
-                    console.print(f"[yellow]Keyword '{new_keyword}' already exists for this category.[/yellow]")
+            if any(cat['name'].lower() == new_name.lower() for cat in categories_list):
+                console.print(f"[yellow]A category named '{new_name}' already exists.[/yellow]")
+                console.input("Press Enter to continue...") # Pause
+                continue
+
+            keywords_str = Prompt.ask("Enter keywords (comma-separated, e.g., work, company, salary)", default="", console=console)
+            new_keywords = sorted(list(set(k.strip().lower() for k in keywords_str.split(',') if k.strip())))
+            
+            new_id = generate_unique_id([cat['id'] for cat in categories_list])
+            
+            new_category = {
+                "id": new_id,
+                "name": new_name,
+                "keywords": new_keywords
+            }
+            categories_list.append(new_category)
+            console.print(f"[green]Category '{new_name}' added with ID '{new_id}'.[/green]")
+            changes_made = True
+            # No generic pause here, screen will redraw
+
+        elif action_key == 'e': # Edit Existing Category
+            if not categories_list:
+                console.print("[yellow]No categories exist to edit.[/yellow]")
+                console.input("Press Enter to continue...") # Pause
+            else:
+                console.print(Panel("[bold yellow]Edit Existing Category[/bold yellow]", expand=False))
+                view_categories(categories_list, console)
+                
+                sorted_categories_for_selection = sorted(categories_list, key=lambda c: c['name'])
+                
+                cat_num_str = Prompt.ask("Enter the number of the category to edit (as shown in the table above, e.g., 1, 2, etc.), or type 'cancel'", console=console).strip()
+
+                if cat_num_str.lower() == 'cancel':
+                    continue
+                
+                category_to_edit = None
+                try:
+                    cat_idx_one_based = int(cat_num_str)
+                    if 1 <= cat_idx_one_based <= len(sorted_categories_for_selection):
+                        category_to_edit = sorted_categories_for_selection[cat_idx_one_based - 1]
+                    else:
+                        console.print(f"[red]Invalid number. Please enter a number between 1 and {len(sorted_categories_for_selection)}.[/red]")
+                        console.input("Press Enter to continue...") # Pause
+                        continue # Added continue after pause
+                except ValueError:
+                    console.print(f"[red]Invalid input. Please enter a number or 'cancel'. You entered: '{cat_num_str}'[/red]")
+                    console.input("Press Enter to continue...") # Pause
+                    continue # Added continue after pause
+
+                if not category_to_edit:
+                    # This case should be covered by the continues above if error messages are shown
+                    continue
                 else:
-                    CUSTOM_KEYWORDS[category].append(new_keyword)
-                    console.print(f"[green]Added keyword: [cyan]{new_keyword}[/cyan][/green]")
+                    # Original editing logic for the found category_to_edit proceeds here
+                    # This sub-logic sets its own `changes_made = True` if modifications occur
+                    # and handles its own "Press Enter to continue..." within its sub-loops.
+                    while True: 
+                        console.print(f"\nEditing Category: [bold magenta]'{category_to_edit['name']}'[/bold magenta] (ID: {category_to_edit['id']})")
+                        edit_options = ["Edit Name", "Edit Keywords", "Done Editing This Category"]
+                        edit_idx, edit_choice_str = show_menu(edit_options, "Select an aspect to edit:")
+
+                        if edit_idx is None: # Handles Esc, q, or selecting '[r] Return to previous menu'
+                            break # Exit category editing options loop
+
+                        if edit_choice_str == "Edit Name":
+                            new_name = Prompt.ask(f"Enter new name for '{category_to_edit['name']}'", default=category_to_edit['name'], console=console).strip()
+                            if not new_name:
+                                console.print("[yellow]Name cannot be empty.[/yellow]")
+                            elif any(cat['name'].lower() == new_name.lower() and cat['id'] != category_to_edit['id'] for cat in categories_list):
+                                console.print(f"[yellow]Another category with the name '{new_name}' already exists.[/yellow]")
+                            else:
+                                if category_to_edit['name'] != new_name:
+                                    category_to_edit['name'] = new_name
+                                    console.print(f"[green]Category name updated to '{new_name}'.[/green]")
+                                    changes_made = True
+                                    Prompt.ask("\nPress Enter to continue...", default="", show_default=False, console=console) # Pause after successful action
+                                else:
+                                    console.print("[yellow]Name is unchanged.[/yellow]")
+                                    # No pause if unchanged, menu will redraw.
+                        
+                        elif edit_choice_str == "Edit Keywords":
+                            while True: # Loop for keyword editing
+                                current_kws = category_to_edit.get('keywords', [])
+                                console.print(f"Current keywords: [green]{', '.join(current_kws) if current_kws else 'None'}[/green]")
+                                kw_options = ["Replace all keywords", "Add keyword(s)", "Remove keyword(s)", "Clear all keywords", "Back to category edit options"]
+                                kw_idx, kw_choice_str = show_menu(kw_options, "Keyword action:")
+
+                                if kw_idx is None: # Handles Esc, q, or selecting '[r] Return to previous menu'
+                                    break # Exit keyword editing loop, NO prompt here
+
+                                if kw_choice_str == "Replace all keywords":
+                                    kws_str = Prompt.ask("Enter new keywords (comma-separated)", console=console)
+                                    new_kws = sorted(list(set(k.strip().lower() for k in kws_str.split(',') if k.strip())))
+                                    if category_to_edit.get('keywords') != new_kws:
+                                        category_to_edit['keywords'] = new_kws
+                                        console.print(f"[green]Keywords replaced. New keywords: {', '.join(new_kws) if new_kws else 'None'}[/green]")
+                                        changes_made = True
+                                        Prompt.ask("\nPress Enter to continue...", default="", show_default=False, console=console)
+                                    else:
+                                        console.print("[yellow]Keywords are unchanged.[/yellow]")
+                                elif kw_choice_str == "Add keyword(s)":
+                                    kws_str = Prompt.ask("Enter keywords to add (comma-separated)", console=console)
+                                    to_add_kws = set(k.strip().lower() for k in kws_str.split(',') if k.strip())
+                                    original_kws_set = set(current_kws)
+                                    added_count = 0
+                                    for kw in to_add_kws:
+                                        if kw not in original_kws_set:
+                                            current_kws.append(kw)
+                                            added_count +=1
+                                    if added_count > 0:
+                                        category_to_edit['keywords'] = sorted(list(set(current_kws))) # Ensure unique and sort
+                                        console.print(f"[green]{added_count} new keyword(s) added. Current: {', '.join(category_to_edit['keywords']) if category_to_edit['keywords'] else 'None'}[/green]")
+                                        changes_made = True
+                                        Prompt.ask("\nPress Enter to continue...", default="", show_default=False, console=console)
+                                    else:
+                                        console.print("[yellow]No new keywords were added (either empty input or keywords already exist).[/yellow]")
+                                elif kw_choice_str == "Remove keyword(s)":
+                                    if not current_kws:
+                                        console.print("[yellow]No keywords to remove.[/yellow]")
+                                        continue
+                                    kws_to_remove_options = [f"{idx+1}. {kw}" for idx, kw in enumerate(current_kws)]
+                                    console.print("Select keyword(s) to remove by number (comma-separated, e.g., 1,3) or type 'all':")
+                                    for opt in kws_to_remove_options: console.print(f"  {opt}")
+                                    kws_remove_input = Prompt.ask("Numbers to remove (or 'all')", console=console).strip().lower()
+                                    removed_any = False
+                                    if kws_remove_input == 'all':
+                                        if Confirm.ask(f"Are you sure you want to remove all {len(current_kws)} keywords?", console=console, default=False):
+                                            category_to_edit['keywords'] = []
+                                            console.print("[green]All keywords removed.[/green]")
+                                            changes_made = True
+                                            removed_any = True
+                                    else:
+                                        indices_to_remove = set()
+                                        try:
+                                            for num_str in kws_remove_input.split(','):
+                                                idx = int(num_str.strip()) - 1
+                                                if 0 <= idx < len(current_kws):
+                                                    indices_to_remove.add(idx)
+                                                else:
+                                                    console.print(f"[red]Invalid number: {idx+1}. Ignoring.[/red]")
+                                        except ValueError:
+                                            console.print("[red]Invalid input for numbers. Please use comma-separated numbers.[/red]")
+                                            continue
+                                        
+                                        if indices_to_remove:
+                                            new_kws_list = [kw for i, kw in enumerate(current_kws) if i not in indices_to_remove]
+                                            if len(new_kws_list) < len(current_kws):
+                                                category_to_edit['keywords'] = sorted(new_kws_list)
+                                                console.print(f"[green]Selected keywords removed. Current: {', '.join(category_to_edit['keywords']) if category_to_edit['keywords'] else 'None'}[/green]")
+                                                changes_made = True
+                                                removed_any = True
+                                                Prompt.ask("\nPress Enter to continue...", default="", show_default=False, console=console)
+                                            else:
+                                                console.print("[yellow]No valid keywords selected for removal or selection issue.[/yellow]")
+                                        else:
+                                             console.print("[yellow]No keywords selected for removal.[/yellow]")
+                                    if not removed_any and kws_remove_input:
+                                        console.print("[yellow]No keywords were removed.[/yellow]")
+                                elif kw_choice_str == "Clear all keywords":
+                                    if not current_kws:
+                                        console.print("[yellow]No keywords to clear.[/yellow]")
+                                    elif Confirm.ask(f"Are you sure you want to clear all {len(current_kws)} keywords?", console=console, default=False):
+                                        category_to_edit['keywords'] = []
+                                        console.print("[green]All keywords cleared.[/green]")
+                                        changes_made = True
+                                        Prompt.ask("\nPress Enter to continue...", default="", show_default=False, console=console)
+                                    else:
+                                        console.print("[yellow]Clear keywords cancelled.[/yellow]")
+                                elif kw_choice_str == "Back to category edit options": # Explicit option from list
+                                    break # Exit keyword editing loop, NO prompt here
+                        
+                        elif edit_choice_str == "Done Editing This Category": # Explicit option from list
+                            break # Exit category editing options loop, NO prompt here, return to main cat menu
+
+        elif action_key == 'd': # Delete Category
+            if not categories_list:
+                console.print("[yellow]No categories exist to delete.[/yellow]")
+                console.input("Press Enter to continue...") # Pause
             else:
-                console.print("[yellow]No keyword provided.[/yellow]")
-        elif selected_option == "Remove a keyword":
-            if category not in CUSTOM_KEYWORDS or not CUSTOM_KEYWORDS[category]:
-                console.print("[yellow]No custom keywords to remove.[/yellow]")
-                continue
+                console.print(Panel("[bold red]Delete Category[/bold red]", expand=False))
+                view_categories(categories_list, console)
                 
-            # Create menu of keywords to remove
-            keyword_options = CUSTOM_KEYWORDS[category].copy()
-            
-            menu_index, selected_keyword = show_menu(
-                keyword_options,
-                title="\nSelect a keyword to remove:",
-                shortcuts=False
-            )
-            
-            if menu_index is None:
-                continue
+                sorted_categories_for_selection = sorted(categories_list, key=lambda c: c['name'])
                 
-            CUSTOM_KEYWORDS[category].remove(selected_keyword)
-            console.print(f"[yellow]Removed keyword: [cyan]{selected_keyword}[/cyan][/yellow]")
-            
-            # Clean up empty lists
-            if not CUSTOM_KEYWORDS[category]:
-                del CUSTOM_KEYWORDS[category]
-        elif selected_option == "Clear all custom keywords":
-            if category in CUSTOM_KEYWORDS and CUSTOM_KEYWORDS[category]:
-                if Confirm.ask(f"Are you sure you want to clear all custom keywords for {category}?", default=False, console=console):
-                    del CUSTOM_KEYWORDS[category]
-                    console.print(f"[yellow]Cleared all custom keywords for [cyan]{category}[/cyan].[/yellow]")
-            else:
-                console.print("[yellow]No custom keywords to clear.[/yellow]")
+                cat_num_str = Prompt.ask("Enter the number of the category to delete (as shown in the table), or type 'cancel'", console=console).strip()
+
+                if cat_num_str.lower() == 'cancel':
+                    continue
+
+                category_to_delete = None
+                try:
+                    cat_idx_one_based = int(cat_num_str)
+                    if 1 <= cat_idx_one_based <= len(sorted_categories_for_selection):
+                        category_to_delete = sorted_categories_for_selection[cat_idx_one_based - 1]
+                    else:
+                        console.print(f"[red]Invalid number. Please enter a number between 1 and {len(sorted_categories_for_selection)}.[/red]")
+                        console.input("Press Enter to continue...") # Pause
+                        continue # Added continue
+                except ValueError:
+                    console.print(f"[red]Invalid input. Please enter a number or 'cancel'. You entered: '{cat_num_str}'[/red]")
+                    console.input("Press Enter to continue...") # Pause
+                    continue # Added continue
+                
+                if not category_to_delete:
+                    continue
+                else:
+                    # Original deletion logic for the found category_to_delete proceeds here
+                    cat_id_to_delete = category_to_delete['id'] # Get the actual ID for logic below
+                    items_using_category = [item['name'] for item in financial_items_list if item.get('category_id') == cat_id_to_delete]
+                    if items_using_category:
+                        console.print(f"[red]Cannot delete category '{category_to_delete['name']}'. It is currently used by the following financial item(s):[/red]")
+                        for item_name in items_using_category:
+                            console.print(f"  - {item_name}")
+                        console.print("[yellow]Please re-assign these items to a different category before deleting this one.[/yellow]")
+                    else:
+                        if Confirm.ask(f"Are you sure you want to delete category '{category_to_delete['name']}' (ID: {cat_id_to_delete})? This cannot be undone.", console=console, default=False):
+                            categories_list.remove(category_to_delete)
+                            console.print(f"[green]Category '{category_to_delete['name']}' deleted.[/green]")
+                            changes_made = True
+                        else:
+                            console.print("[yellow]Deletion cancelled.[/yellow]")
+
+        elif action_key == 'q':
+            break # Exit category management
+        
+        else: # Invalid key
+            console.print(f"[red]Invalid option: '{action_key_pressed}'.[/red]")
+            console.input("Press Enter to continue...") # Pause for invalid input
+
+        # The generic "Prompt.ask..." if changes_made was true in this iteration is REMOVED.
+        # Pauses are now specific to errors or handled within sub-actions.
+    
+    return categories_list
 
 def auto_categorize_with_confirmation(assets, console):
     """
@@ -486,31 +431,8 @@ def auto_categorize_with_confirmation(assets, console):
         assets: List of assets to categorize
         console: Rich console object for output
     """
-    for asset in assets:
-        if 'category' not in asset or asset.get('category') == 'Other':
-            suggested_category = guess_category(asset['name'])
-            
-            console.print(f"\n[bold]Asset:[/bold] [cyan]{asset['name']}[/cyan]")
-            console.print(f"[bold]Suggested Category:[/bold] [yellow]{suggested_category}[/yellow]")
-            
-            # Show all available categories for selection
-            all_categories = sorted(get_all_categories())
-            
-            # Add the suggested category first if it's not already in all_categories
-            if suggested_category not in all_categories:
-                all_categories.insert(0, suggested_category)
-            
-            menu_index, selected_category = show_menu(
-                all_categories,
-                title="\nSelect a category (or press ESC to skip):",
-                shortcuts=False
-            )
-            
-            if menu_index is not None:
-                asset['category'] = selected_category
-                console.print(f"[green]Set category to: [cyan]{selected_category}[/cyan][/green]")
-            else:
-                console.print("[yellow]Skipped categorization.[/yellow]")
+    # COMMENTED OUT
+    pass
 
 def categorize_assets(assets, console):
     """
@@ -523,78 +445,77 @@ def categorize_assets(assets, console):
     Returns:
         bool: True if changes were saved, False if cancelled
     """
-    from simple_term_menu import TerminalMenu
-    from rich.prompt import Confirm
+    # COMMENTED OUT
+    pass
     
-    if not assets:
-        console.print("[yellow]No assets to categorize.[/yellow]")
-        return True
+    # if not assets:
+    #     console.print("[yellow]No assets to categorize.[/yellow]")
+    #     return True
     
-    # Load custom keywords
-    load_custom_keywords()
+    # # Load custom keywords
+    # load_custom_keywords()
     
-    console.print("\n[bold]ASSET CATEGORIZATION[/bold]")
-    console.print("─" * 50)
+    # console.print("\n[bold]ASSET CATEGORIZATION[/bold]")
+    # console.print("─" * 50)
     
-    from net_worth_tracker import display_assets
+    # from net_worth_tracker import display_assets
     
-    while True:
-        display_assets(assets, show_balances=False, show_categories=True)
+    # while True:
+    #     display_assets(assets, show_balances=False, show_categories=True)
         
-        # Build menu options
-        options = []
+    #     # Build menu options
+    #     options = []
         
-        # Add asset options
-        for idx, asset in enumerate(assets, 1):
-            category = asset.get('category', 'Other')
-            options.append(f"Set category for: {asset['name']} (currently: {category})")
+    #     # Add asset options
+    #     for idx, asset in enumerate(assets, 1):
+    #         category = asset.get('category', 'Other')
+    #         options.append(f"Set category for: {asset['name']} (currently: {category})")
         
-        # Add utility options
-        options.append("Auto-categorize all assets with confirmation")
-        options.append("Auto-categorize all assets without confirmation")
-        options.append("Manage category keywords")
-        options.append("View all available categories")
-        options.append("Done with categorization")
-        options.append("Back to previous menu without saving changes")
+    #     # Add utility options
+    #     options.append("Auto-categorize all assets with confirmation")
+    #     options.append("Auto-categorize all assets without confirmation")
+    #     options.append("Manage category keywords")
+    #     options.append("View all available categories")
+    #     options.append("Done with categorization")
+    #     options.append("Back to previous menu without saving changes")
         
-        terminal_menu = TerminalMenu(
-            options,
-            title="\nSelect an option:",
-            menu_cursor="► ",
-            menu_cursor_style=("fg_black", "bold"),
-            menu_highlight_style=("bg_gray", "fg_black"),
-        )
+    #     terminal_menu = TerminalMenu(
+    #         options,
+    #         title="\nSelect an option:",
+    #         menu_cursor="► ",
+    #         menu_cursor_style=(\"fg_black\", \"bold\"),
+    #         menu_highlight_style=(\"bg_gray\", \"fg_black\"),
+    #     )
         
-        menu_entry_index = terminal_menu.show()
+    #     menu_entry_index = terminal_menu.show()
         
-        # Handle ESC/q
-        if menu_entry_index is None:
-            console.print("[yellow]Returning to previous menu without applying category changes.[/yellow]")
-            return False
+    #     if menu_entry_index is None:
+    #         console.print("[yellow]Returning to previous menu without applying category changes.[/yellow]")
+    #         return False
             
-        # Check which option was selected
-        num_assets = len(assets)
-        if menu_entry_index < num_assets:  # Selected an asset
-            asset_idx = menu_entry_index
-            set_asset_category(assets[asset_idx], console)
-        elif options[menu_entry_index] == "Auto-categorize all assets with confirmation":
-            auto_categorize_with_confirmation(assets, console)
-        elif options[menu_entry_index] == "Auto-categorize all assets without confirmation":
-            for asset in assets:
-                if 'category' not in asset or asset.get('category') == 'Other':
-                    asset['category'] = guess_category(asset['name'])
-            console.print("[green]All assets have been auto-categorized.[/green]")
-        elif options[menu_entry_index] == "Manage category keywords":
-            manage_category_keywords(console)
-        elif options[menu_entry_index] == "View all available categories":
-            view_categories(console)
-            # Wait for a key press to continue
-            console.print("\n[cyan]Press Enter to continue[/cyan]")
-            console.input()
-        elif options[menu_entry_index] == "Done with categorization":
-            return True
-        elif options[menu_entry_index] == "Back to previous menu without saving changes":
-            console.print("[yellow]Returning to previous menu without applying category changes.[/yellow]")
-            return False
+    #     num_assets = len(assets)
+    #     if menu_entry_index < num_assets:
+    #         asset_idx = menu_entry_index
+    #         # set_asset_category(assets[asset_idx], console) # This function was removed
+    #         console.print(f"[yellow]\'set_asset_category\' (called from categorize_assets) was removed. Action for {assets[asset_idx]['name']} skipped.[/yellow]")
+    #     elif options[menu_entry_index] == "Auto-categorize all assets with confirmation":
+    #         # auto_categorize_with_confirmation(assets, console) # This function is now commented out
+    #         console.print("[yellow]\'auto_categorize_with_confirmation\' is commented out. Action skipped.[/yellow]")
+    #     elif options[menu_entry_index] == "Auto-categorize all assets without confirmation":
+    #         for asset in assets:
+    #             if 'category' not in asset or asset.get('category') == 'Other':
+    #                 asset['category'] = guess_category(asset['name'])
+    #         console.print("[green]All assets have been auto-categorized (using basic guess_category).[/green]")
+    #     elif options[menu_entry_index] == "Manage category keywords":
+    #         manage_category_keywords(console)
+    #     elif options[menu_entry_index] == "View all available categories":
+    #         view_categories(console)
+    #         console.print("\\n[cyan]Press Enter to continue[/cyan]")
+    #         console.input()
+    #     elif options[menu_entry_index] == "Done with categorization":
+    #         return True
+    #     elif options[menu_entry_index] == "Back to previous menu without saving changes":
+    #         console.print("[yellow]Returning to previous menu without applying category changes.[/yellow]")
+    #         return False
     
-    return True 
+    # return True 
