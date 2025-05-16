@@ -19,8 +19,9 @@ def load_historical_data(console, filename=None):
            'categories' not in data or \
            'financial_items' not in data or \
            'snapshots' not in data:
-            console.print(f"[red]Error: Data file [cyan]{filename}[/cyan] is not in the expected new format.[/red]")
-            console.print("[yellow]Expected format: {'categories': [...], 'financial_items': [...], 'snapshots': [...]}[/yellow]")
+            if console:
+                console.print(f"[red]Error: Data file [cyan]{filename}[/cyan] is not in the expected new format.[/red]")
+                console.print("[yellow]Expected format: {'categories': [...], 'financial_items': [...], 'snapshots': [...]}[/yellow]")
             return [], [], [] # Return empty structures to avoid errors, match other error returns
 
         categories = data.get('categories', [])
@@ -30,17 +31,21 @@ def load_historical_data(console, filename=None):
         # Sort snapshots by date, most recent first
         snapshots = sorted(snapshots, key=lambda x: x.get('date', ''), reverse=True)
         
-        console.print(f"[green]Successfully loaded data from [cyan]{filename}[/cyan].[/green]")
+        if console:
+            console.print(f"[green]Successfully loaded data from [cyan]{filename}[/cyan].[/green]")
         return categories, financial_items, snapshots
 
     except FileNotFoundError:
-        console.print(f"[yellow]Data file [cyan]{filename}[/cyan] not found. Starting with empty data.[/yellow]")
+        if console:
+            console.print(f"[yellow]Data file [cyan]{filename}[/cyan] not found. Starting with empty data.[/yellow]")
         return [], [], []
     except json.JSONDecodeError:
-        console.print(f"[red]Error: Could not decode JSON from [cyan]{filename}[/cyan]. File might be corrupted.[/red]")
+        if console:
+            console.print(f"[red]Error: Could not decode JSON from [cyan]{filename}[/cyan]. File might be corrupted.[/red]")
         return [], [], []
     except Exception as e:
-        console.print(f"[red]An unexpected error occurred while loading data from {filename}: {e}[/red]")
+        if console:
+            console.print(f"[red]An unexpected error occurred while loading data from {filename}: {e}[/red]")
         return [], [], []
 
 def save_historical_data(console, categories, financial_items, snapshots, filename=None):
@@ -60,11 +65,14 @@ def save_historical_data(console, categories, financial_items, snapshots, filena
     try:
         with open(filename, 'w') as f:
             json.dump(data_to_save, f, indent=4)
-        console.print(f"\n[green]All data saved to [cyan]{filename}[/cyan][/green]")
+        if console:
+            console.print(f"\n[green]All data saved to [cyan]{filename}[/cyan][/green]")
     except IOError:
-        console.print(f"\n[bold red]Error: Could not save data to [cyan]{filename}[/cyan][/bold red]")
+        if console:
+            console.print(f"\n[bold red]Error: Could not save data to [cyan]{filename}[/cyan][/bold red]")
     except Exception as e:
-        console.print(f"\n[bold red]An unexpected error occurred while saving data to {filename}: {e}[/bold red]")
+        if console:
+            console.print(f"\n[bold red]An unexpected error occurred while saving data to {filename}: {e}[/bold red]")
 
 # --- Functions for remembering the last opened file ---
 
