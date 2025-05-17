@@ -6,50 +6,59 @@ DATA_FILENAME = "net_worth_refactored.json"
 APP_CONFIG_FILENAME = "app_config.json" # Configuration file
 
 def load_historical_data(console, filename=None):
-    """Loads all data (categories, financial_items, snapshots) from the refactored JSON file."""
+    """Loads all data (categories, financial_items, snapshots, achieved_milestones, financial_goal) from the JSON file."""
     if filename is None:
         filename = DATA_FILENAME
     
+    default_return = [], [], [], [], None # Added None for financial_goal
+
     try:
         with open(filename, 'r') as f:
             data = json.load(f)
 
-        # Validate the basic structure of the new format
+        # Validate the basic structure
         if not isinstance(data, dict) or \
            'categories' not in data or \
            'financial_items' not in data or \
-           'snapshots' not in data:
+           'snapshots' not in data: # achieved_milestones & financial_goal are optional for backward compatibility
             if console:
                 console.print(f"[red]Error: Data file [cyan]{filename}[/cyan] is not in the expected new format.[/red]")
-                console.print("[yellow]Expected format: {'categories': [...], 'financial_items': [...], 'snapshots': [...]}[/yellow]")
-            return [], [], [] # Return empty structures to avoid errors, match other error returns
+                console.print("[yellow]Expected format: {'categories': ..., 'financial_items': ..., 'snapshots': ..., 'achieved_milestones': ... (opt), 'financial_goal': ... (opt)}[/yellow]")
+            return default_return
 
         categories = data.get('categories', [])
         financial_items = data.get('financial_items', [])
         snapshots = data.get('snapshots', [])
+        achieved_milestones = data.get('achieved_milestones', []) 
+        financial_goal = data.get('financial_goal', None) # Load financial_goal, default to None
+
+        # Ensure each financial item has a 'target_balance' key, defaulting to None for backward compatibility
+        for item in financial_items:
+            if 'target_balance' not in item:
+                item['target_balance'] = None
 
         # Sort snapshots by date, most recent first
         snapshots = sorted(snapshots, key=lambda x: x.get('date', ''), reverse=True)
         
         if console:
             console.print(f"[green]Successfully loaded data from [cyan]{filename}[/cyan].[/green]")
-        return categories, financial_items, snapshots
+        return categories, financial_items, snapshots, achieved_milestones, financial_goal
 
     except FileNotFoundError:
         if console:
             console.print(f"[yellow]Data file [cyan]{filename}[/cyan] not found. Starting with empty data.[/yellow]")
-        return [], [], []
+        return default_return
     except json.JSONDecodeError:
         if console:
             console.print(f"[red]Error: Could not decode JSON from [cyan]{filename}[/cyan]. File might be corrupted.[/red]")
-        return [], [], []
+        return default_return
     except Exception as e:
         if console:
             console.print(f"[red]An unexpected error occurred while loading data from {filename}: {e}[/red]")
-        return [], [], []
+        return default_return
 
-def save_historical_data(console, categories, financial_items, snapshots, filename=None):
-    """Saves all data (categories, financial_items, snapshots) to the refactored JSON file."""
+def save_historical_data(console, categories, financial_items, snapshots, achieved_milestones, financial_goal, filename=None):
+    """Saves all data (categories, financial_items, snapshots, achieved_milestones, financial_goal) to the JSON file."""
     if filename is None:
         filename = DATA_FILENAME
 
@@ -59,7 +68,9 @@ def save_historical_data(console, categories, financial_items, snapshots, filena
     data_to_save = {
         "categories": categories,
         "financial_items": financial_items,
-        "snapshots": snapshots_sorted
+        "snapshots": snapshots_sorted,
+        "achieved_milestones": achieved_milestones,
+        "financial_goal": financial_goal # Add financial_goal to save data
     }
 
     try:
